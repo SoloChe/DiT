@@ -1,0 +1,12 @@
+__pycache__/
+
+*.DS_store
+*.sh
+*.out
+*.err
+test*
+
+
+/logs*/
+/slurm_out/
+/results/
