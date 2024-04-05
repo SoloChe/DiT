@@ -61,11 +61,12 @@ def main(args):
 
     if args.ckpt is None:
         assert args.model == "DiT-XL/2", "Only DiT-XL/2 models are available for auto-download."
-        assert args.image_size in [256, 512]
-        assert args.num_classes == 1000
+        assert args.image_size in [32, 256, 512]
+        assert args.num_classes == 10
 
     # Load model:
-    latent_size = args.image_size // 8
+    # latent_size = args.image_size // 8
+    latent_size = args.image_size
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes

@@ -420,6 +420,7 @@ class GaussianDiffusion:
         self,
         model,
         shape,
+        noise_steps=None,
         noise=None,
         clip_denoised=True,
         denoised_fn=None,
@@ -450,6 +451,7 @@ class GaussianDiffusion:
         for sample in self.p_sample_loop_progressive(
             model,
             shape,
+            noise_steps=noise_steps,
             noise=noise,
             clip_denoised=clip_denoised,
             denoised_fn=denoised_fn,
@@ -466,6 +468,7 @@ class GaussianDiffusion:
         model,
         shape,
         noise=None,
+        noise_steps=None,
         clip_denoised=True,
         denoised_fn=None,
         cond_fn=None,
@@ -487,7 +490,11 @@ class GaussianDiffusion:
             img = noise
         else:
             img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            
+        if noise_steps is not None:
+            indices = list(range(noise_steps))[::-1]
+        else:
+            indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.
@@ -601,6 +608,7 @@ class GaussianDiffusion:
         self,
         model,
         shape,
+        noise_steps=None,
         noise=None,
         clip_denoised=True,
         denoised_fn=None,
@@ -618,6 +626,7 @@ class GaussianDiffusion:
         for sample in self.ddim_sample_loop_progressive(
             model,
             shape,
+            noise_steps=noise_steps,
             noise=noise,
             clip_denoised=clip_denoised,
             denoised_fn=denoised_fn,
@@ -634,6 +643,7 @@ class GaussianDiffusion:
         self,
         model,
         shape,
+        noise_steps=None,
         noise=None,
         clip_denoised=True,
         denoised_fn=None,
@@ -655,7 +665,11 @@ class GaussianDiffusion:
             img = noise
         else:
             img = th.randn(*shape, device=device)
-        indices = list(range(self.num_timesteps))[::-1]
+            
+        if noise_steps is None:
+            indices = list(range(self.num_timesteps))[::-1]
+        else:
+            indices = list(range(noise_steps))[::-1]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.

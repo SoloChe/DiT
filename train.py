@@ -30,9 +30,11 @@ import os
 from models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
+from torch.utils.tensorboard import SummaryWriter
 
-from data import cifar10
 
+from data_med import load_brainage
+from translation import sample_from_noise
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -65,12 +67,17 @@ def cleanup():
     """
     dist.destroy_process_group()
 
-
+class DummyWriter:
+    def add_scalar(self, *args, **kwargs):
+        pass
+        # Implement other methods as needed
+        
 def create_logger(logging_dir):
     """
     Create a logger that writes to a log file and stdout.
     """
     if dist.get_rank() == 0:  # real logger
+        writer = SummaryWriter(logging_dir)
         logging.basicConfig(
             level=logging.INFO,
             format='[\033[34m%(asctime)s\033[0m] %(message)s',
@@ -81,7 +88,8 @@ def create_logger(logging_dir):
     else:  # dummy logger (does nothing)
         logger = logging.getLogger(__name__)
         logger.addHandler(logging.NullHandler())
-    return logger
+        writer = DummyWriter()
+    return logger, writer
 
 
 def center_crop_arr(pil_image, image_size):
@@ -124,19 +132,23 @@ def main(args):
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
-
+    
     # Setup an experiment folder:
     if rank == 0:
+        # writer = SummaryWriter(args.results_dir)  # Create a TensorBoard logging directory
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
+       
         experiment_index = len(glob(f"{args.results_dir}/*"))
         model_string_name = args.model.replace("/", "-")  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
         experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
         checkpoint_dir = f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
+        args.img_dir = f"{experiment_dir}/images"  # Stores generated images
+        os.makedirs(args.img_dir, exist_ok=True)  # Make image folder (holds all generated images)
         os.makedirs(checkpoint_dir, exist_ok=True)
-        logger = create_logger(experiment_dir)
+        logger, writer = create_logger(experiment_dir)
         logger.info(f"Experiment directory created at {experiment_dir}")
     else:
-        logger = create_logger(None)
+        logger, writer = create_logger(None)
 
     # Create model:
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
@@ -145,11 +157,14 @@ def main(args):
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes,
-        in_channels=3,
+        in_channels=args.in_channels,
     )
+    
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
+    
+    
     model = DDP(model.to(device), device_ids=[rank])
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
@@ -167,13 +182,7 @@ def main(args):
     # ])
     # dataset = ImageFolder(args.data_path, transform=transform)
     
-    transform=transforms.Compose([
-                                  transforms.RandomHorizontalFlip(),
-                                  transforms.ToTensor(),
-                                  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                  ])
-    
-    dataset = cifar10(args.data_path, split='train', ret_lab=True, transform=transform)
+    dataset = load_brainage(args.data_path, args.age_path, split="train")
     
     sampler = DistributedSampler(
         dataset,
@@ -228,6 +237,7 @@ def main(args):
             running_loss += loss.item()
             log_steps += 1
             train_steps += 1
+            
             if train_steps % args.log_every == 0:
                 # Measure training speed:
                 torch.cuda.synchronize()
@@ -238,6 +248,7 @@ def main(args):
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 logger.info(f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}")
+                writer.add_scalar("train/loss", avg_loss, train_steps)
                 # Reset monitoring variables:
                 running_loss = 0
                 log_steps = 0
@@ -255,6 +266,15 @@ def main(args):
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
+                    
+                    logger.info("Sampling from noise...")
+                    
+                    model.eval()
+                    logger.info(f"model training mode: {model.training}")
+                    logger.info(f"model module training mode : {model.module.training}", )
+                    _, _ = sample_from_noise(model.module, diffusion, device, args, name=train_steps)
+                    model.train()
+                    
                 dist.barrier()
 
     model.eval()  # important! This disables randomized embedding dropout
@@ -268,9 +288,11 @@ if __name__ == "__main__":
     # Default args here will train DiT-XL/2 with the hyperparameters we used in our paper (except training iters).
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, required=True)
+    parser.add_argument("--age-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--image-size", type=int, choices=[32, 128, 256, 512], default=256)
+    parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--global-batch-size", type=int, default=256)
@@ -278,6 +300,16 @@ if __name__ == "__main__":
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument("--ckpt-every", type=int, default=1000)
+    parser.add_argument("--ckpt-every", type=int, default=5000)
+    
+    parser.add_argument("--cfg-scale", type=float, default=1.8)
+    parser.add_argument(
+        "--labels",
+        type=float,
+        nargs="+",
+        help="labels (index) to sample from periodically during training",
+        default=10,  # disabled in default
+    )
+    
     args = parser.parse_args()
     main(args)
