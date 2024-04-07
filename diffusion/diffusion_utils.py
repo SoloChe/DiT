@@ -42,9 +42,7 @@ def approx_standard_normal_cdf(x):
     standard normal.
     """
     coef1 = np.sqrt(2.0 / np.pi) # 0.79788
-    # print((x + 0.044715 * th.pow(x, 3)), flush=True)
-    # print(0.79788 * (x + 0.044715 * th.pow(x, 3)), flush=True)
-    return 0.5 * (1.0 + th.tanh( 0.79788 * (x + 0.044715 * th.pow(x, 3))))
+    return 0.5 * (1.0 + th.tanh( coef1 * (x + 0.044715 * th.pow(x, 3))))
 
 
 def continuous_gaussian_log_likelihood(x, *, means, log_scales):
