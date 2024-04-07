@@ -1,6 +1,6 @@
-# from monai.data import DataLoader, Dataset
-# from monai import transforms
-# from monai.utils import first
+import monai.data as md
+from monai import transforms
+from monai.utils import first
 
 from pathlib import Path
 import csv
@@ -22,67 +22,72 @@ def get_age(file_path):
         for row in csv_reader:
             if row[0] == "patientid":
                 continue
-            if not (row[0].split("/")[-1]).startswith("IXI"):
-                continue
+            # IXI only
+            # if not (row[0].split("/")[-1]).startswith("IXI"):
+            #     continue
             
             data[row[0].split("/")[-1]] = int(float(row[1]))
 
-    age_map = {k: v for v, k in enumerate(set(data.values()))}
-    return data, age_map
+    age_map = {k: v for v, k in enumerate(set(data.values()))} # age:index
+    # stats count age frequency
+    age_freq = {}
+    for age in data.values():
+        age_freq[age] = age_freq.get(age, 0) + 1
+    
+    return data, age_map, age_freq
 
 
-# def get_loader_3d(image_dir, age_file, mode, batch_size=1, num_workers=2):
-#     age_dict, _ = get_age(age_file)
+def get_data_3d(image_dir, age_file, mode, num_workers=4):
+    age_dict, age_map, age_freq = get_age(age_file)
 
-#     if isinstance(image_dir, str):
-#         image_dir = Path(image_dir)
-#     images = image_dir.iterdir()
+    if isinstance(image_dir, str):
+        image_dir = Path(image_dir)
+    images = image_dir.iterdir()
 
-#     files = []
-#     for img in images:
-#         try:
-#             files.append({"img": img, "age": int(float(age_dict[img.name]))})
-#         except KeyError:
-#             print(f"Image {img.name} does not have an age label.")
+    files = []
+    for img in images:
+        try:
+            age = int(float(age_dict[img.name]))
+            files.append({"img": img, "age_idx": age_map[age]})
+        except KeyError:
+            print(f"Image {img.name} does not have an age label.")
 
-#     random.seed(10)
-#     random.shuffle(files)
+    random.seed(10)
+    random.shuffle(files)
 
-#     n_train = int(len(files) * 0.80)
-#     n_val = int(len(files) * 0.20)
+    n_train = int(len(files) * 0.80)
+    n_val = int(len(files) * 0.20)
 
-#     files_train = files[:n_train]
-#     files_val = files[n_train : n_train + n_val]
+    files_train = files[:n_train]
+    files_val = files[n_train :]
 
-#     transform = transforms.Compose(
-#         [
-#             transforms.LoadImaged(keys=["img"]),
-#             transforms.EnsureChannelFirstd(keys=["img"]),
-#             transforms.EnsureTyped(keys=["img"]),
-#             transforms.Orientationd(keys=["img"], axcodes="RAS"),
-#             transforms.ScaleIntensityRangePercentilesd(
-#                 keys="img", lower=0, upper=99, clip=True, b_min=0, b_max=1
-#             ),
-#         ]
-#     )
+    transform = transforms.Compose(
+        [
+            transforms.LoadImaged(keys=["img"]),
+            transforms.EnsureChannelFirstd(keys=["img"]),
+            transforms.EnsureTyped(keys=["img"]),
+            transforms.Orientationd(keys=["img"], axcodes="RAS"),
+            transforms.ScaleIntensityRangePercentilesd(
+                keys="img", lower=0, upper=99, clip=False, b_min=0, b_max=1
+            ),
+        ]
+    )
 
-#     files = files_train if mode == "train" else files_val
-#     dataset = Dataset(data=files, transform=transform)
-#     data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
-#     # print('test')
-#     # check_data = first(data_loader)
-#     # print(len(dataset))
-#     # print(check_data["img"].shape)
-#     # print(check_data["img"].dtype)
-#     # print(check_data["img"].max(), check_data["img"].min())
-#     # print(check_data["age"])
+    files = files_train if mode == "train" else files_val
+    dataset = md.Dataset(data=files, transform=transform)
+    
+    # for testing
+    # data_loader = md.DataLoader(dataset, batch_size=2, num_workers=num_workers)
+    
+    # print('test')
+    # check_data = first(data_loader)
+    # print(len(dataset))
+    # print(check_data["img"].shape)
+    # print(check_data["img"].dtype)
+    # print(check_data["img"].max(), check_data["img"].min())
+    # print(check_data["age"])
 
-#     # if mode == "train":
-#     #     while True:
-#     #             yield from data_loader
-#     # else:
-#     #     return data_loader
-#     return data_loader
+    return dataset, age_map, age_freq
 
 
 class PatientDataset(torch.utils.data.Dataset):
@@ -236,13 +241,13 @@ def get_brainage_data_iter(
         yield from loader
 
 if __name__ == "__main__":
-    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
+    data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
     age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
-    # data_loader = get_loader_3d(
-    #     data_dir, age_dir, mode="train", batch_size=2, num_workers=2
-    # )
+    data_loader = get_loader_3d(
+        data_dir, age_dir, mode="train", batch_size=2, num_workers=2
+    )
     
-    data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")
-    data_loader = get_brainage_data_iter(data_dir=data_dir,age_file=age_dir, batch_size=2, split="train", num_patients=10)
-    x, age = next(data_loader)
-    print(x.shape, age)
+    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")
+    # data_loader = get_brainage_data_iter(data_dir=data_dir,age_file=age_dir, batch_size=2, split="train", num_patients=10)
+    # x, age = next(data_loader)
+    # print(x.shape, age)

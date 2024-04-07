@@ -63,7 +63,8 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     z = torch.randn(len(y),
                      args.in_channels,
                      args.image_size,
-                     args.image_size, 
+                     args.image_size,
+                     args.image_size,
                      device=device)
     
     y_null = torch.tensor([args.num_classes] * z.shape[0], device=device)
@@ -118,10 +119,10 @@ def main(args):
     if args.from_noise:
         SAMPLES, noise = sample_from_noise(model, diffusion, device, args)
       
-        SAMPLES_path = Path(args.log_dir) / f"sample_{i}.npy"
+        SAMPLES_path = Path(args.log_dir) / f"sample.npy"
         np.save(SAMPLES_path, SAMPLES.cpu().numpy())
         
-        NOISE_path = Path(args.log_dir) / f"noise_{i}.npy"
+        NOISE_path = Path(args.log_dir) / f"noise.npy"
         np.save(NOISE_path, noise.cpu().numpy())
         
     else:
