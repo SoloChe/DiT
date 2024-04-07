@@ -148,7 +148,9 @@ def main(args):
         os.makedirs(args.img_dir, exist_ok=True)  # Make image folder (holds all generated images)
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger, writer = create_logger(experiment_dir)
+        
         logger.info(f"Experiment directory created at {experiment_dir}")
+        logger.info(f"args: {args}")
     else:
         logger, writer = create_logger(None)
 
@@ -173,10 +175,9 @@ def main(args):
     if args.resume_checkpoint is not None:
         # resume_steps, resume_epochs = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
         logger.info(f"Loading checkpoint from {args.resume_checkpoint}")
-        resume_steps, resume_epochs = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
+        resume_steps = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
     else:
         resume_steps = 0
-        resume_epochs = 0
     
     logger.info(f"set model to DDP...")
     model = DDP(model, device_ids=[rank])
@@ -204,7 +205,7 @@ def main(args):
         seed=args.global_seed
     )
     
-    loader = md.DataLoader(
+    loader = DataLoader(
         dataset,
         batch_size=int(args.global_batch_size // dist.get_world_size()),
         shuffle=False,
@@ -228,7 +229,7 @@ def main(args):
 
     logger.info(f"Training for {args.epochs} epochs...")
     
-    for epoch in range(args.epochs-resume_epochs):
+    for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
         for data in loader:

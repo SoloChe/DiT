@@ -36,8 +36,7 @@ def load_from_checkpoint(model, ema, opt, model_name):
     # sync_params(ema.parameters())
     
     steps = checkpoint["resume_steps"]
-    epochs = checkpoint["resume_epochs"]
-    return steps, epochs
+    return steps
     
     
     
