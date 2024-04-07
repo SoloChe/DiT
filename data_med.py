@@ -23,8 +23,8 @@ def get_age(file_path):
             if row[0] == "patientid":
                 continue
             # IXI only
-            # if not (row[0].split("/")[-1]).startswith("IXI"):
-            #     continue
+            if not (row[0].split("/")[-1]).startswith("IXI"):
+                continue
             
             data[row[0].split("/")[-1]] = int(float(row[1]))
 
@@ -52,7 +52,9 @@ class BrainDataset_3D(Dataset):
     def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
         if isinstance(image_dir, str):
             image_dir = Path(image_dir)
-        images = image_dir.iterdir()
+        # images = image_dir.iterdir()
+        
+        images = sorted(list(image_dir.glob('IXI*')))
         age_dict, age_map, age_freq = get_age(age_file)
         self.mode = mode
         self.transform = transform
