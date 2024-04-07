@@ -26,7 +26,7 @@ resume_checkpoint="./results/001-DiT-XL-16-3D/checkpoints/0004700.pt"
 MODEL_FLAGS="--model DiT-XL/16 --resume-checkpoint $resume_checkpoint"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --num-classes 65 \
-            --image-size 256 --in-channels 1\
+            --image-size 256 --in-channels 1 --dim 3\
             --global-batch-size 8 --epochs 8000 --num-workers 4"
 
 SAMPLE_FLAGS="--labels 60\
