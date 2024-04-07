@@ -715,6 +715,7 @@ class GaussianDiffusion:
         )
         kl = mean_flat(kl) / np.log(2.0)
 
+       
         decoder_nll = -discretized_gaussian_log_likelihood(
             x_start, means=out["mean"], log_scales=0.5 * out["log_variance"]
         )

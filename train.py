@@ -33,8 +33,10 @@ from diffusers.models import AutoencoderKL
 from torch.utils.tensorboard import SummaryWriter
 
 
-from data_med import load_brainage
+from data_med import BrainDataset_3D
 from translation import sample_from_noise
+from utils import load_from_checkpoint
+import monai.data as md
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -139,14 +141,16 @@ def main(args):
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
        
         experiment_index = len(glob(f"{args.results_dir}/*"))
-        model_string_name = args.model.replace("/", "-")  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
+        model_string_name = args.model.replace("/", "-") + '-3D'  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
         experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
         checkpoint_dir = f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
         args.img_dir = f"{experiment_dir}/images"  # Stores generated images
         os.makedirs(args.img_dir, exist_ok=True)  # Make image folder (holds all generated images)
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger, writer = create_logger(experiment_dir)
+        
         logger.info(f"Experiment directory created at {experiment_dir}")
+        logger.info(f"args: {args}")
     else:
         logger, writer = create_logger(None)
 
@@ -158,20 +162,30 @@ def main(args):
         input_size=latent_size,
         num_classes=args.num_classes,
         in_channels=args.in_channels,
-    )
+        dim=args.dim,
+    ).to(device)
     
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
     
+    # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
     
-    model = DDP(model.to(device), device_ids=[rank])
+    # read model from checkpoint
+    if args.resume_checkpoint is not None:
+        # resume_steps, resume_epochs = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
+        logger.info(f"Loading checkpoint from {args.resume_checkpoint}")
+        resume_steps = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
+    else:
+        resume_steps = 0
+    
+    logger.info(f"set model to DDP...")
+    model = DDP(model, device_ids=[rank])
+    
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
     logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters())/1024/1024:.2f}M")
-
-    # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
 
     # Setup data:
     # transform = transforms.Compose([
@@ -182,7 +196,7 @@ def main(args):
     # ])
     # dataset = ImageFolder(args.data_path, transform=transform)
     
-    dataset = load_brainage(args.data_path, args.age_path, split="train")
+    dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
     
     sampler = DistributedSampler(
         dataset,
@@ -209,22 +223,26 @@ def main(args):
     ema.eval()  # EMA model should always be in eval mode
 
     # Variables for monitoring/logging purposes:
-    train_steps = 0
+    train_steps = resume_steps
     log_steps = 0
     running_loss = 0
     start_time = time()
 
     logger.info(f"Training for {args.epochs} epochs...")
+    
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device)
+        for data in loader:
+            
+            x = data[0].to(device)
+            y = data[1].to(device)
             # with torch.no_grad():
             #     # Map input images to latent space + normalize latents:
             #     x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
+            # logger.info(f"x.shape: {x.shape}, y.shape: {y.shape}, t.shape: {t.shape}")
+            
             model_kwargs = dict(y=y)
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
@@ -232,6 +250,8 @@ def main(args):
             loss.backward()
             opt.step()
             update_ema(ema, model.module)
+            
+            # logger.info(f"loss: {loss.item()}")
 
             # Log loss values:
             running_loss += loss.item()
@@ -261,7 +281,10 @@ def main(args):
                         "model": model.module.state_dict(),
                         "ema": ema.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args
+                        "args": args,
+                        "resume_steps": train_steps,
+                        "resume_epochs": epoch
+                        
                     }
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
                     torch.save(checkpoint, checkpoint_path)
@@ -290,10 +313,12 @@ if __name__ == "__main__":
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--age-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
+    parser.add_argument("--resume-checkpoint", type=str, default=None)
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--image-size", type=int, choices=[32, 128, 256, 512], default=256)
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--dim", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--global-batch-size", type=int, default=256)
     parser.add_argument("--global-seed", type=int, default=0)

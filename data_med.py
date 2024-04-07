@@ -1,4 +1,4 @@
-# from monai.data import DataLoader, Dataset
+# import monai.data as md
 # from monai import transforms
 # from monai.utils import first
 
@@ -10,7 +10,7 @@ from torchvision.utils import make_grid, save_image
 import numpy as np
 import os
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, WeightedRandomSampler
-
+import nibabel as nib
 
 def get_age(file_path):
     data = {}
@@ -22,69 +22,76 @@ def get_age(file_path):
         for row in csv_reader:
             if row[0] == "patientid":
                 continue
+            # IXI only
             if not (row[0].split("/")[-1]).startswith("IXI"):
                 continue
             
             data[row[0].split("/")[-1]] = int(float(row[1]))
 
-    age_map = {k: v for v, k in enumerate(set(data.values()))}
-    return data, age_map
+    age_map = {k: v for v, k in enumerate(set(data.values()))} # age:index
+    # stats count age frequency
+    age_freq = {}
+    for age in data.values():
+        age_freq[age] = age_freq.get(age, 0) + 1
+    
+    return data, age_map, age_freq
+
+def normalise_percentile(volume):
+    """
+    Normalise the intensity values in each modality by scaling by 99 percentile foreground (nonzero) value.
+    """
+    for mdl in range(volume.shape[0]):
+        v_ = volume[mdl, :, :, :].reshape(-1)
+        v_ = v_[v_ > 0]  # Use only the brain foreground to calculate the quantile
+        p_99 = torch.quantile(v_, 0.99)
+        volume[mdl, :, :, :] /= p_99
+
+    return volume*2 - 1
+
+class BrainDataset_3D(Dataset):
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
+        if isinstance(image_dir, str):
+            image_dir = Path(image_dir)
+        # images = image_dir.iterdir()
+        
+        images = sorted(list(image_dir.glob('IXI*')))
+        age_dict, age_map, age_freq = get_age(age_file)
+        self.mode = mode
+        self.transform = transform
+        files = []
+        for img in images:
+            try:
+                age = int(float(age_dict[img.name]))
+                files.append({"img": img, "age_idx": age_map[age]})
+            except KeyError:
+                print(f"Image {img.name} does not have an age label.")
+
+        random.seed(10)
+        random.shuffle(files)
+
+        n_train = int(len(files) * 0.80)
+        self.files = files[:n_train] if mode == "train" else files[n_train :]
+        
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        # Load NIfTI image
+        patient_path = self.files[idx]
+        patient_img = nib.load(patient_path['img'])
+        patient_img = patient_img.get_fdata()
+        age_index = patient_path['age_idx']
+        # Convert image to PyTorch tensor
+        image = torch.from_numpy(patient_img).float().unsqueeze(0)
+        # Apply transform if any
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, age_index
+       
 
 
-# def get_loader_3d(image_dir, age_file, mode, batch_size=1, num_workers=2):
-#     age_dict, _ = get_age(age_file)
-
-#     if isinstance(image_dir, str):
-#         image_dir = Path(image_dir)
-#     images = image_dir.iterdir()
-
-#     files = []
-#     for img in images:
-#         try:
-#             files.append({"img": img, "age": int(float(age_dict[img.name]))})
-#         except KeyError:
-#             print(f"Image {img.name} does not have an age label.")
-
-#     random.seed(10)
-#     random.shuffle(files)
-
-#     n_train = int(len(files) * 0.80)
-#     n_val = int(len(files) * 0.20)
-
-#     files_train = files[:n_train]
-#     files_val = files[n_train : n_train + n_val]
-
-#     transform = transforms.Compose(
-#         [
-#             transforms.LoadImaged(keys=["img"]),
-#             transforms.EnsureChannelFirstd(keys=["img"]),
-#             transforms.EnsureTyped(keys=["img"]),
-#             transforms.Orientationd(keys=["img"], axcodes="RAS"),
-#             transforms.ScaleIntensityRangePercentilesd(
-#                 keys="img", lower=0, upper=99, clip=True, b_min=0, b_max=1
-#             ),
-#         ]
-#     )
-
-#     files = files_train if mode == "train" else files_val
-#     dataset = Dataset(data=files, transform=transform)
-#     data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
-#     # print('test')
-#     # check_data = first(data_loader)
-#     # print(len(dataset))
-#     # print(check_data["img"].shape)
-#     # print(check_data["img"].dtype)
-#     # print(check_data["img"].max(), check_data["img"].min())
-#     # print(check_data["age"])
-
-#     # if mode == "train":
-#     #     while True:
-#     #             yield from data_loader
-#     # else:
-#     #     return data_loader
-#     return data_loader
-
-
+    
 class PatientDataset(torch.utils.data.Dataset):
     """
     Dataset class representing a collection of slices from a single scan.
@@ -236,13 +243,18 @@ def get_brainage_data_iter(
         yield from loader
 
 if __name__ == "__main__":
-    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
+    data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
     age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
-    # data_loader = get_loader_3d(
-    #     data_dir, age_dir, mode="train", batch_size=2, num_workers=2
-    # )
+    data_set = BrainDataset_3D(
+        data_dir, age_dir, mode="train", transform=normalise_percentile
+    )
+    data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
+    # check data
+    for i, (x, age) in enumerate(data_loader):
+        print(x.shape, age)
+        break
     
-    data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")
-    data_loader = get_brainage_data_iter(data_dir=data_dir,age_file=age_dir, batch_size=2, split="train", num_patients=10)
-    x, age = next(data_loader)
-    print(x.shape, age)
+    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")
+    # data_loader = get_brainage_data_iter(data_dir=data_dir,age_file=age_dir, batch_size=2, split="train", num_patients=10)
+    # x, age = next(data_loader)
+    # print(x.shape, age)

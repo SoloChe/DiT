@@ -63,7 +63,8 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     z = torch.randn(len(y),
                      args.in_channels,
                      args.image_size,
-                     args.image_size, 
+                     args.image_size,
+                     args.image_size,
                      device=device)
     
     y_null = torch.tensor([args.num_classes] * z.shape[0], device=device)
@@ -77,12 +78,16 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     samples = diffusion.p_sample_loop(
         model.forward_with_cfg, z.shape, noise=z, noise_steps=None,
         clip_denoised=False, model_kwargs=model_kwargs, progress=True, device=device
-    ) # (2 * len(y), 1, 256, 256)
+    ) # (2 * len(y), 1, 256, 256, 256)
     
     samples, _ = samples.chunk(2, dim=0)  # Remove null class samples (len(y), 1, 256, 256)
     
     if name is not None:
-        samples = make_grid(samples, nrow=3)
+        samples = samples.squeeze(1) # 1, 256, 256, 256
+        samples = torch.einsum("chwd->dchw", samples)  # (256, 1, 256, 256)
+        # select middle 20 slice
+        samples = samples[118:138,...] 
+        samples = make_grid(samples, nrow=4)
         save_image(samples, Path(args.img_dir) / f"{name}.png")
     return samples, z.chunk(2, dim=0)[0]
                         
@@ -118,10 +123,10 @@ def main(args):
     if args.from_noise:
         SAMPLES, noise = sample_from_noise(model, diffusion, device, args)
       
-        SAMPLES_path = Path(args.log_dir) / f"sample_{i}.npy"
+        SAMPLES_path = Path(args.log_dir) / f"sample.npy"
         np.save(SAMPLES_path, SAMPLES.cpu().numpy())
         
-        NOISE_path = Path(args.log_dir) / f"noise_{i}.npy"
+        NOISE_path = Path(args.log_dir) / f"noise.npy"
         np.save(NOISE_path, noise.cpu().numpy())
         
     else:

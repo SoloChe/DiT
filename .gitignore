@@ -1,7 +1,7 @@
 __pycache__/
 
+.vscode/
 *.DS_store
-*.sh
 *.out
 *.err
 test*
