@@ -466,9 +466,9 @@ DiT_models = {
 if __name__ == "__main__":
     # # test 3d patch
     x = torch.randn(2, 1, 256, 256, 256)
-    patcher = PatchEmbed3D(256, 16, 1, 768, bias=True)
-    patches = patcher(x)
-    print(patches.shape)
+    # patcher = PatchEmbed3D(256, 16, 1, 768, bias=True)
+    # patches = patcher(x)
+    # print(patches.shape)
     
     model = DiT_B_16(input_size=256,
                     in_channels=1)

@@ -33,9 +33,10 @@ from diffusers.models import AutoencoderKL
 from torch.utils.tensorboard import SummaryWriter
 
 
-from data_med import load_brainage, get_data_3d
+from data_med import BrainDataset_3D
 from translation import sample_from_noise
 from utils import load_from_checkpoint
+import monai.data as md
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -193,7 +194,7 @@ def main(args):
     # ])
     # dataset = ImageFolder(args.data_path, transform=transform)
     
-    dataset, _, _ = get_data_3d(args.data_path, args.age_path, "train")
+    dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
     
     sampler = DistributedSampler(
         dataset,
@@ -203,7 +204,7 @@ def main(args):
         seed=args.global_seed
     )
     
-    loader = DataLoader(
+    loader = md.DataLoader(
         dataset,
         batch_size=int(args.global_batch_size // dist.get_world_size()),
         shuffle=False,
@@ -232,8 +233,8 @@ def main(args):
         logger.info(f"Beginning epoch {epoch}...")
         for data in loader:
             
-            x = data['img'].to(device)
-            y = data['age_idx'].to(device)
+            x = data[0].to(device)
+            y = data[1].to(device)
             # with torch.no_grad():
             #     # Map input images to latent space + normalize latents:
             #     x = vae.encode(x).latent_dist.sample().mul_(0.18215)
