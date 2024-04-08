@@ -41,12 +41,19 @@ def normalise_percentile(volume):
     Normalise the intensity values in each modality by scaling by 99 percentile foreground (nonzero) value.
     """
     for mdl in range(volume.shape[0]):
-        v_ = volume[mdl, :, :, :].reshape(-1)
+        v_ = volume[mdl, ...].reshape(-1)
         v_ = v_[v_ > 0]  # Use only the brain foreground to calculate the quantile
         p_99 = torch.quantile(v_, 0.99)
-        volume[mdl, :, :, :] /= p_99
-
+        volume[mdl, ...] /= p_99
     return volume*2 - 1
+
+def load_patient(idx, files):
+    patient = files[idx]
+    patient_img = nib.load(patient['img'])
+    patient_img = patient_img.get_fdata()
+    patient_img = torch.from_numpy(patient_img).float().unsqueeze(0) # 1, 256, 256, 256
+    age_index = patient['age_idx']
+    return patient_img, age_index 
 
 class BrainDataset_3D(Dataset):
     def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
@@ -54,6 +61,13 @@ class BrainDataset_3D(Dataset):
             image_dir = Path(image_dir)
         # images = image_dir.iterdir()
         
+        assert mode in ["train", "val"]
+        
+        if mode == "train":
+            image_dir = image_dir / "train"
+        elif mode == "val":
+            image_dir = image_dir / "val"
+            
         images = sorted(list(image_dir.glob('IXI*')))
         age_dict, age_map, age_freq = get_age(age_file)
         self.mode = mode
@@ -66,181 +80,51 @@ class BrainDataset_3D(Dataset):
             except KeyError:
                 print(f"Image {img.name} does not have an age label.")
 
-        random.seed(10)
-        random.shuffle(files)
-
-        n_train = int(len(files) * 0.80)
-        self.files = files[:n_train] if mode == "train" else files[n_train :]
+        self.files = files
         
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, idx):
-        # Load NIfTI image
-        patient_path = self.files[idx]
-        patient_img = nib.load(patient_path['img'])
-        patient_img = patient_img.get_fdata()
-        age_index = patient_path['age_idx']
-        # Convert image to PyTorch tensor
-        image = torch.from_numpy(patient_img).float().unsqueeze(0)
+        # Load NIfTI image 
+        patient_img, age_index = load_patient(idx, self.files)
         # Apply transform if any
         if self.transform:
-            image = self.transform(image)
-        
+            image = self.transform(patient_img)
+        # crop the volume to 224
+        image = image[:, 16:240, 16:240, 16:240]
         return image, age_index
-       
-
-
+           
+class BrainDataset_2D_Single(Dataset):
+    def __init__(self, files, id, transform=normalise_percentile):
+        
+        patient_img, self.age_index = load_patient(id, files) 
+        self.slices = [patient_img[..., i] for i in range(patient_img.shape[-1])] # from the last slices, shape 1, 256, 256
+        self.transform = transform
+        
+    def __getitem__(self, idx):
+        image = self.slices[idx]
+        if self.transform:
+            image = self.transform(image)
+        image = image[:, 16:240, 16:240]
+        return image, self.age_index
     
-class PatientDataset(torch.utils.data.Dataset):
-    """
-    Dataset class representing a collection of slices from a single scan.
-    """
-
-    def __init__(
-        self, patient_dir: Path, process_fun=None, id=None, age_dict=None, age_map=None
-    ):
-        self.patient_dir = patient_dir
-        self.patient_age = int(float(age_dict[patient_dir.name+".nii"]))
-        self.patient_age_index = age_map[self.patient_age]
-        
-        self.slice_paths = sorted(
-            list(patient_dir.iterdir()), key=lambda x: int(x.name[6:-4])
-        )
-        self.process = process_fun
-        self.id = id
-        self.len = len(self.slice_paths)
-        self.idx_map = {x: x for x in range(self.len)}
-
-    def __getitem__(self, idx):
-        idx = self.idx_map[idx]
-        data = np.load(self.slice_paths[idx])
-        if self.process is not None:
-            data = self.process(self.id, self.patient_age_index, data['x'])
-        return data
-
     def __len__(self):
-        return self.len
+        return len(self.slices)
 
-
-class BrainDataset(torch.utils.data.Dataset):
-    """
-    Dataset class representing a collection of slices from scans from a specific dataset split.
-    """
-
-    def __init__(
-        self,
-        datapath,
-        age_file,
-        split="train",
-        seed=0,
-        num_patients=None,
-    ):
-        self.rng = random.Random(seed)
-
-        assert split in ["train", "test"]
-        
-        age_dict, age_map = get_age(age_file) # key: age, value: index
-        self.split = split
-
-        path = Path(datapath) / f"npy_{split}"
-
-        def process(id, age, x):
-            # x: 1, 256, 256
-            x_tensor = torch.from_numpy(x[0]).float()
-            # center crop to 224
-            # x_tensor = x_tensor[:, 16:240, 16:240]
-            x_tensor = x_tensor * 2 - 1
-            return x_tensor, age, id
-
-        patient_dirs = sorted(list(path.iterdir()))
-        self.rng.shuffle(patient_dirs)
-        num_patients = len(patient_dirs) if num_patients is None else num_patients
-
-        self.patient_datasets = []
-        for i in range(num_patients):
-            try :
-                self.patient_age = int(float(age_dict[patient_dirs[i].name+".nii"]))
-            except KeyError:
-                print(f"Image {patient_dirs[i].name} does not have an age label.")
-                continue
-            
-            self.patient_datasets.append(
-                PatientDataset(
-                    patient_dirs[i], age_dict=age_dict, age_map=age_map, process_fun=process, id=i
-                )
-            )
-
+class BrainDataset_2D(BrainDataset_3D):
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
+        super().__init__(image_dir, age_file, mode, transform)
+        self.patient_datasets = [BrainDataset_2D_Single(self.files, i, transform) for i in range(len(self.files))]
         self.dataset = ConcatDataset(self.patient_datasets)
-
+        
     def __getitem__(self, idx):
-        if self.split == "train":
-            x, age, _ = self.dataset[idx]  
-            return x, age
-        else:
-            x, age, id = self.dataset[idx] 
-            return x, age, id
-       
+        image_slices, age_index = self.dataset[idx]
+        return image_slices, age_index
+    
     def __len__(self):
         return len(self.dataset)
-
-
-# %% load brainage
-def load_brainage(
-    data_dir,
-    age_file,
-    split,
-    num_patients=None,
-):
-    assert split in ["train", "test"]
-
-    if split == "train":
-        return BrainDataset(
-            data_dir,
-            age_file,
-            split="train",
-            num_patients=num_patients,
-        )
-    else:
-        return BrainDataset(
-            data_dir,
-            age_file,
-            split="test",
-            num_patients=num_patients,
-        )
-
-
-# %%
-def get_brainage_data_iter(
-    data_dir,
-    age_file,
-    batch_size,
-    split="train",
-    logger=None,
-    training=True,
-    num_patients=None,
-):
-    data = load_brainage(data_dir, age_file, split, num_patients=num_patients)
-
-    loader = DataLoader(
-        data,
-        batch_size=batch_size,
-        num_workers=4,
-        shuffle=True if split == "train" else False,
-        drop_last=True if split == "train" else False,
-        sampler=None,
-    )
-
-    if logger is not None:
-        logger.log(f"data_size: {data.__len__()}")
-
-    training = True if split == "train" else False
-    
-    if training:
-        while True:
-            yield from loader
-    else:
-        yield from loader
+   
 
 if __name__ == "__main__":
     data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
@@ -252,6 +136,8 @@ if __name__ == "__main__":
     # check data
     for i, (x, age) in enumerate(data_loader):
         print(x.shape, age)
+        print(x.min(), x.max())
+        print(data_set.__len__())
         break
     
     # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")

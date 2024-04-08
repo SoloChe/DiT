@@ -21,12 +21,12 @@ def sync_params(params):
         with torch.no_grad():
             dist.broadcast(p, 0)  
 
-def load_from_checkpoint(model, ema, opt, model_name):
+def load_from_checkpoint(model, ema, opt, checkpoint, device):
     """
     load states from a checkpoint
     """
-    assert os.path.isfile(model_name), f'Could not find DiT checkpoint at {model_name}'
-    checkpoint = torch.load(model_name, map_location=lambda storage, loc: storage)
+    assert os.path.isfile(checkpoint), f'Could not find DiT checkpoint at {checkpoint}'
+    checkpoint = torch.load(checkpoint, map_location=torch.device('cuda'))
     
     model.load_state_dict(checkpoint["model"])
     ema.load_state_dict(checkpoint["ema"])
@@ -36,7 +36,7 @@ def load_from_checkpoint(model, ema, opt, model_name):
     # sync_params(ema.parameters())
     
     steps = checkpoint["resume_steps"]
-    return steps
+    return model, ema, opt, steps
     
     
     

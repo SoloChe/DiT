@@ -171,15 +171,15 @@ def main(args):
     
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-    
-    # read model from checkpoint
+     
+     # read model from checkpoint
     if args.resume_checkpoint is not None:
         # resume_steps, resume_epochs = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
         logger.info(f"Loading checkpoint from {args.resume_checkpoint}")
-        resume_steps = load_from_checkpoint(model, ema, opt, args.resume_checkpoint)
+        model, ema, opt, resume_steps = load_from_checkpoint(model, ema, opt, args.resume_checkpoint, device)
     else:
         resume_steps = 0
-    
+        
     logger.info(f"set model to DDP...")
     model = DDP(model, device_ids=[rank])
     
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--resume-checkpoint", type=str, default=None)
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--image-size", type=int, choices=[32, 128, 256, 512], default=256)
+    parser.add_argument("--image-size", type=int, choices=[32, 128, 224, 256, 512], default=256)
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--dim", type=int, default=3)

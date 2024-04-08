@@ -520,12 +520,12 @@ DiT_models = {
 
 if __name__ == "__main__":
     # # test 3d patch
-    x = torch.randn(2, 1, 256, 256, 256)
+    x = torch.randn(2, 1, 224, 224, 224)
     # patcher = PatchEmbed3D(256, 16, 1, 768, bias=True)
     # patches = patcher(x)
     # print(patches.shape)
     
-    model = DiT_B_16(input_size=256,
+    model = DiT_B_16(input_size=224,
                     in_channels=1)
     out = model(x, t=torch.tensor([0.1, 0.3]), y=torch.tensor([0, 1]))
     print(out.shape)
