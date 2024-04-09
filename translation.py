@@ -16,7 +16,7 @@ from diffusers.models import AutoencoderKL
 from download import find_model
 from models import DiT_models
 import argparse
-from data_med import get_age, get_brainage_data_iter
+from data_med import get_age, BrainDataset_3D, BrainDataset_2D
 from pathlib import Path
 import numpy as np
 
@@ -60,12 +60,19 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     assert isinstance(y, list)
     y = torch.tensor(y, dtype=torch.long).to(device)
     
-    z = torch.randn(len(y),
+    if args.dim == 3:
+        z = torch.randn(len(y),
                      args.in_channels,
                      args.image_size,
                      args.image_size,
                      args.image_size,
                      device=device)
+    else:
+        z = torch.randn(len(y),
+                        args.in_channels,
+                        args.image_size,
+                        args.image_size,
+                        device=device)
     
     y_null = torch.tensor([args.num_classes] * z.shape[0], device=device)
     y = torch.cat([y, y_null], 0)
@@ -78,15 +85,17 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     samples = diffusion.p_sample_loop(
         model.forward_with_cfg, z.shape, noise=z, noise_steps=None,
         clip_denoised=False, model_kwargs=model_kwargs, progress=True, device=device
-    ) # (2 * len(y), 1, 256, 256, 256)
+    ) # (2 * len(y), 1, 256, 256, 256) or (2 * len(y), 1, 256, 256) 
     
-    samples, _ = samples.chunk(2, dim=0)  # Remove null class samples (len(y), 1, 256, 256)
+    samples, _ = samples.chunk(2, dim=0)  # Remove null class samples (len(y), 1, 256, 256, 256) or (len(y), 1, 256, 256)
     
     if name is not None:
-        samples = samples.squeeze(1) # 1, 256, 256, 256
-        samples = torch.einsum("chwd->dchw", samples)  # (256, 1, 256, 256)
-        # select middle 20 slice
-        samples = samples[118:138,...] 
+        if args.dim == 3:
+            samples = samples.squeeze(1) # 1, 256, 256, 256
+            samples = torch.einsum("chwd->dchw", samples)  # 256, 1, 256, 256
+            # select middle 20 slice
+            samples = samples[118:138,...] # 20, 1, 256, 256
+            
         samples = make_grid(samples, nrow=4)
         save_image(samples, Path(args.img_dir) / f"{name}.png")
     return samples, z.chunk(2, dim=0)[0]
@@ -131,14 +140,12 @@ def main(args):
         
     else:
         _, age_map = get_age(args.age_dir) # age:index
-    
-        data_test = get_brainage_data_iter(
-            data_dir=args.data_dir,
-            age_file=args.age_dir,
-            batch_size=args.batch_size,
-            split="test",
-            num_patients=args.num_patients,
-        )
+
+        if args.dim == 3:
+            data_test = BrainDataset_3D(args.data_path, args.age_path, mode="val") 
+        else:
+            data_test = BrainDataset_2D(args.data_path, args.age_path, mode="val")
+        
         for i, data in enumerate(data_test):
             
             source, lab, id = data
@@ -174,7 +181,8 @@ if __name__ == "__main__":
     parser.add_argument("--from-noise", type=str2bool, default=False)
     
     parser.add_argument("--num-total-steps", type=int, default=1000)
-    parser.add_argument("--image-size", type=int, choices=[32, 256, 512], default=256)
+    parser.add_argument("--image-size", type=int, choices=[32, 224, 256, 512], default=256)
+    parser.add_argument("--dim", type=int, default=3)
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--cfg-scale", type=float, default=1.8)

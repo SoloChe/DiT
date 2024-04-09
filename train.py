@@ -33,7 +33,7 @@ from diffusers.models import AutoencoderKL
 from torch.utils.tensorboard import SummaryWriter
 
 
-from data_med import BrainDataset_3D
+from data_med import BrainDataset_3D, BrainDataset_2D
 from translation import sample_from_noise
 from utils import load_from_checkpoint
 import monai.data as md
@@ -140,8 +140,9 @@ def main(args):
         # writer = SummaryWriter(args.results_dir)  # Create a TensorBoard logging directory
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
        
+        suffix = '-3D' if args.dim == 3 else '-2D' 
         experiment_index = len(glob(f"{args.results_dir}/*"))
-        model_string_name = args.model.replace("/", "-") + '-3D'  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
+        model_string_name = args.model.replace("/", "-") + suffix  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
         experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
         checkpoint_dir = f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
         args.img_dir = f"{experiment_dir}/images"  # Stores generated images
@@ -195,8 +196,10 @@ def main(args):
     #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
     # ])
     # dataset = ImageFolder(args.data_path, transform=transform)
-    
-    dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
+    if args.dim == 3: 
+        dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
+    else:
+        dataset = BrainDataset_2D(args.data_path, args.age_path, mode="train")
     
     sampler = DistributedSampler(
         dataset,

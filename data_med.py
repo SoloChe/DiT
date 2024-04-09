@@ -96,17 +96,18 @@ class BrainDataset_3D(Dataset):
         return image, age_index
            
 class BrainDataset_2D_Single(Dataset):
-    def __init__(self, files, id, transform=normalise_percentile):
+    def __init__(self, files, id, transform):
         
-        patient_img, self.age_index = load_patient(id, files) 
+        patient_img, self.age_index = load_patient(id, files)
+        if transform:
+            patient_img = transform(patient_img)
+        # crop the volume to 224
+        patient_img = patient_img[:, 16:240, 16:240, 16:240]
+         
         self.slices = [patient_img[..., i] for i in range(patient_img.shape[-1])] # from the last slices, shape 1, 256, 256
-        self.transform = transform
-        
+       
     def __getitem__(self, idx):
         image = self.slices[idx]
-        if self.transform:
-            image = self.transform(image)
-        image = image[:, 16:240, 16:240]
         return image, self.age_index
     
     def __len__(self):
@@ -129,10 +130,10 @@ class BrainDataset_2D(BrainDataset_3D):
 if __name__ == "__main__":
     data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
     age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
-    data_set = BrainDataset_3D(
+    data_set = BrainDataset_2D(
         data_dir, age_dir, mode="train", transform=normalise_percentile
     )
-    data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
+    data_loader = DataLoader(data_set, batch_size=64, shuffle=True)
     # check data
     for i, (x, age) in enumerate(data_loader):
         print(x.shape, age)

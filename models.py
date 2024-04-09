@@ -205,10 +205,13 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
-    def __init__(self, hidden_size, patch_size, out_channels):
+    def __init__(self, hidden_size, patch_size, out_channels, dim):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, patch_size * patch_size * patch_size * out_channels, bias=True)
+        if dim == 3:
+            self.linear = nn.Linear(hidden_size, patch_size * patch_size * patch_size * out_channels, bias=True)
+        else:
+            self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size, 2 * hidden_size, bias=True)
@@ -263,7 +266,7 @@ class DiT(nn.Module):
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
-        self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
+        self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels, self.dim)
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -279,7 +282,7 @@ class DiT(nn.Module):
         if self.dim == 3:
             pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim) + 0.5))
         else:
-            pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim) + 0.5))
+            pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim)))
             
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
@@ -326,6 +329,7 @@ class DiT(nn.Module):
         x: (N, T, patch_size**2 * C)
         imgs: (N, H, W, C)
         """
+        print(x.shape)
         c = self.out_channels
         p = self.x_embedder.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
@@ -343,7 +347,7 @@ class DiT(nn.Module):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
-        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W * D_ / patch_size ** 3; D_ is the third dim if self.dim == 3
+        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = h * w * d / patch_size ** 3; d is the third dim if self.dim == 3
         t = self.t_embedder(t)                   # (N, D)
         y = self.y_embedder(y, self.training)    # (N, D)
         c = t + y                                # (N, D)
@@ -520,13 +524,14 @@ DiT_models = {
 
 if __name__ == "__main__":
     # # test 3d patch
-    x = torch.randn(2, 1, 224, 224, 224)
+    x = torch.randn(2, 1, 224, 224)
     # patcher = PatchEmbed3D(256, 16, 1, 768, bias=True)
     # patches = patcher(x)
     # print(patches.shape)
     
     model = DiT_B_16(input_size=224,
-                    in_channels=1)
+                    in_channels=1,
+                    dim=2)
     out = model(x, t=torch.tensor([0.1, 0.3]), y=torch.tensor([0, 1]))
     print(out.shape)
     
