@@ -23,14 +23,14 @@ data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 
 # resume_checkpoint="./results/001-DiT-XL-16-3D/checkpoints/0004700.pt"
 
-MODEL_FLAGS="--model DiT-XL/16"
+MODEL_FLAGS="--model DiT-XL/16 --pos-embed_dim 1"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --num-classes 65 \
             --image-size 224 --in-channels 1 --dim 3\
             --global-batch-size 8 --epochs 8000 --num-workers 4"
 
 SAMPLE_FLAGS="--labels 60\
-              --ckpt-every 1000 --log-every 100"
+              --ckpt-every 2000 --log-every 100"
 
 
 

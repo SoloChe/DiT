@@ -240,7 +240,8 @@ class DiT(nn.Module):
         class_dropout_prob=0.1,
         num_classes=1000,
         learn_sigma=True,
-        dim = 3
+        dim=3,
+        pos_embed_dim=1
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -249,6 +250,7 @@ class DiT(nn.Module):
         self.patch_size = patch_size
         self.num_heads = num_heads
         self.dim = dim
+        self.pos_embed_dim = pos_embed_dim
         
         if self.dim == 3:
             self.x_embedder = PatchEmbed3D(input_size, patch_size, in_channels, hidden_size, bias=True)
@@ -278,12 +280,18 @@ class DiT(nn.Module):
                     nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
 
+        
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        if self.dim == 3:
+        
+        if self.pos_embed_dim == 3:
             pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim) + 0.5))
-        else:
+        elif self.pos_embed_dim == 2:
             pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim)))
-            
+        elif self.pos_embed_dim == 1:
+            pos_embed = get_1d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches))
+        else:
+            raise ValueError(f"Unsupported pos_embed_dim: {self.pos_embed_dim}")
+    
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
@@ -311,8 +319,8 @@ class DiT(nn.Module):
 
     def unpatchify3D(self, x):
         """
-        x: (N, T, patch_size**3 * C)
-        imgs: (N, H, W, C, D)
+        x: (N, T, patch_size**dim * C)
+        imgs: (N, H, W, C, D) or (N, H, W, D, C)
         """
         c = self.out_channels
         p = self.x_embedder.patch_size[0]
@@ -396,9 +404,10 @@ def get_3d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
     grid_w = np.arange(grid_size, dtype=np.float32)
     grid_d = np.arange(grid_size, dtype=np.float32)
     
-    grid = np.meshgrid(grid_w, grid_h, grid_d)  # here w goes first
+    grid = np.meshgrid(grid_w, grid_h, grid_d, indexing='ij')  # here w goes first
     grid = np.stack(grid, axis=0)
-    grid = grid.reshape([3, 1, grid_size, grid_size, grid_size])
+    # grid = grid.reshape([3, 1, grid_size, grid_size, grid_size])
+    grid = grid.reshape([3, -1])
     
     pos_embed = get_3d_sincos_pos_embed_from_grid(embed_dim, grid)
     if cls_token and extra_tokens > 0:
@@ -409,10 +418,10 @@ def get_3d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
 def get_3d_sincos_pos_embed_from_grid(embed_dim, grid):
     assert embed_dim % 3 == 0
     # use half of dimensions to encode grid_h
-    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 3, grid[0])  # (H*W, D/3)
-    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 3, grid[1])  # (H*W, D/3)
     emb_d = get_1d_sincos_pos_embed_from_grid(embed_dim // 3, grid[2])  # (H*W, D/3)
-    emb = np.concatenate([emb_h, emb_w, emb_d], axis=1) # (H*W, D)
+    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 3, grid[1])  # (H*W, D/3)
+    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 3, grid[0])  # (H*W, D/3)
+    emb = np.concatenate([emb_d, emb_h, emb_w], axis=1) # (H*W, D)
     return emb
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):
@@ -430,8 +439,23 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
     pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
     if cls_token and extra_tokens > 0:
         pos_embed = np.concatenate([np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0)
+        
+    # print(f'pos_shape: {pos_embed.shape}')
     return pos_embed
 
+def get_1d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):
+    """
+    grid_size: int of the grid height and width
+    return:
+    pos_embed: [grid_size*grid_size, embed_dim] or [1+grid_size*grid_size, embed_dim] (w/ or w/o cls_token)
+    """
+    grid = np.arange(grid_size, dtype=np.float32)
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+    if cls_token and extra_tokens > 0:
+        pos_embed = np.concatenate([np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0)
+        
+    # print(f'pos_shape: {pos_embed.shape}')
+    return pos_embed
 
 def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
     assert embed_dim % 2 == 0
@@ -524,14 +548,15 @@ DiT_models = {
 
 if __name__ == "__main__":
     # # test 3d patch
-    x = torch.randn(2, 1, 224, 224)
+    x = torch.randn(2, 1, 224, 224, 224)
     # patcher = PatchEmbed3D(256, 16, 1, 768, bias=True)
     # patches = patcher(x)
     # print(patches.shape)
     
     model = DiT_B_16(input_size=224,
                     in_channels=1,
-                    dim=2)
+                    dim=3,
+                    pos_embed_dim=1)
     out = model(x, t=torch.tensor([0.1, 0.3]), y=torch.tensor([0, 1]))
     print(out.shape)
     

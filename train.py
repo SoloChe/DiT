@@ -164,6 +164,7 @@ def main(args):
         num_classes=args.num_classes,
         in_channels=args.in_channels,
         dim=args.dim,
+        pos_embed_dim=args.pos_embed_dim,
     ).to(device)
     
     # Note that parameter initialization is done within the DiT constructor
@@ -320,6 +321,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--image-size", type=int, choices=[32, 128, 224, 256, 512], default=256)
     parser.add_argument("--in-channels", type=int, default=3)
+    parser.add_argument("--pos-embed-dim", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--dim", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=100)
