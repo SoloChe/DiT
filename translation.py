@@ -19,6 +19,7 @@ import argparse
 from data_med import get_age, BrainDataset_3D, BrainDataset_2D
 from pathlib import Path
 import numpy as np
+from torch.utils.data import DataLoader
 
 from utils import str2bool
 
@@ -107,18 +108,16 @@ def main(args):
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-    
-    if args.ckpt is None:
-        assert args.model == "DiT-XL/2", "Only DiT-XL/2 models are available for auto-download."
-        assert args.image_size in [32, 256, 512]
-        assert args.num_classes == 1000    
+    Path(args.log_path).mkdir(parents=True, exist_ok=True)
+     
     
     latent_size = args.image_size
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes,
-        in_channels=args.in_channels
+        in_channels=args.in_channels,
+        dim=args.dim,
+        pos_embed_dim=args.pos_embed_dim,
     ).to(device)
     
     # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
@@ -132,49 +131,53 @@ def main(args):
     if args.from_noise:
         SAMPLES, noise = sample_from_noise(model, diffusion, device, args)
       
-        SAMPLES_path = Path(args.log_dir) / f"sample.npy"
+        SAMPLES_path = Path(args.log_path) / f"sample.npy"
         np.save(SAMPLES_path, SAMPLES.cpu().numpy())
         
-        NOISE_path = Path(args.log_dir) / f"noise.npy"
+        NOISE_path = Path(args.log_path) / f"noise.npy"
         np.save(NOISE_path, noise.cpu().numpy())
         
     else:
-        _, age_map = get_age(args.age_dir) # age:index
+        _, age_map, _ = get_age(args.age_path) # age:index
 
         if args.dim == 3:
             data_test = BrainDataset_3D(args.data_path, args.age_path, mode="val") 
         else:
             data_test = BrainDataset_2D(args.data_path, args.age_path, mode="val")
         
-        for i, data in enumerate(data_test):
+        loader = DataLoader(data_test, batch_size=args.batch_size, shuffle=False)
+        
+        for i, data in enumerate(loader):
+            
+            if i >= args.num_batches:
+                break
             
             source, lab, id = data
             source = source.to(device)
             SAMPLES, noise = sample_each_age(model, diffusion, source, age_map, device, args)
             
-            
-            SAMPLES_path = Path(args.log_dir) / f"sample_{i}.npy"
+            SAMPLES_path = Path(args.log_path) / f"sample_{i}.npy"
             np.save(SAMPLES_path, SAMPLES.cpu().numpy())
             
-            SOURCE_path = Path(args.log_dir) / f"source_{i}.npy"
+            SOURCE_path = Path(args.log_path) / f"source_{i}.npy"
             np.save(SOURCE_path, source.cpu().numpy())
             
-            NOISE_path = Path(args.log_dir) / f"noise_{i}.npy"
+            NOISE_path = Path(args.log_path) / f"noise_{i}.npy"
             np.save(NOISE_path, noise.cpu().numpy())
             
-            ID_path = Path(args.log_dir) / f"id_{i}.npy"
+            ID_path = Path(args.log_path) / f"id_{i}.npy"
             np.save(ID_path, id.numpy())
             
-            LABEL_path = Path(args.log_dir) / f"label_{i}.npy"
+            LABEL_path = Path(args.log_path) / f"label_{i}.npy"
             np.save(LABEL_path, lab.numpy())
         
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--data-dir", type=str, default="./data/brainage")
-    parser.add_argument("--age-dir", type=str, default="./data/brainage/age.csv")
-    parser.add_argument("--log-dir", type=str, default="./logs/test")
+    parser.add_argument("--data-path", type=str, default="./data/brainage")
+    parser.add_argument("--age-path", type=str, default="./data/brainage/age.csv")
+    parser.add_argument("--log-path", type=str, default="./logs/test")
     # parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="mse")
     
     parser.add_argument("--batch-size", type=int, default=32)
@@ -183,12 +186,13 @@ if __name__ == "__main__":
     parser.add_argument("--num-total-steps", type=int, default=1000)
     parser.add_argument("--image-size", type=int, choices=[32, 224, 256, 512], default=256)
     parser.add_argument("--dim", type=int, default=3)
+    parser.add_argument("--pos-embed-dim", type=int, default=2)
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--cfg-scale", type=float, default=1.8)
     parser.add_argument("--num-sampling-steps", type=int, default=1000)
     parser.add_argument("--num-noise-steps", type=int, default=10)
-    parser.add_argument("--num-patients", type=int, default=50)
+    parser.add_argument("--num-batches", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--ckpt", type=str, default=None,
                         help="Optional path to a DiT checkpoint (default: auto-download a pre-trained DiT-XL/2 model).")

@@ -53,7 +53,8 @@ def load_patient(idx, files):
     patient_img = patient_img.get_fdata()
     patient_img = torch.from_numpy(patient_img).float().unsqueeze(0) # 1, 256, 256, 256
     age_index = patient['age_idx']
-    return patient_img, age_index 
+    name = patient['name']
+    return patient_img, age_index, name
 
 class BrainDataset_3D(Dataset):
     def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
@@ -76,7 +77,7 @@ class BrainDataset_3D(Dataset):
         for img in images:
             try:
                 age = int(float(age_dict[img.name]))
-                files.append({"img": img, "age_idx": age_map[age]})
+                files.append({"img": img, "age_idx": age_map[age], 'name': img.name})
             except KeyError:
                 print(f"Image {img.name} does not have an age label.")
 
@@ -87,18 +88,18 @@ class BrainDataset_3D(Dataset):
 
     def __getitem__(self, idx):
         # Load NIfTI image 
-        patient_img, age_index = load_patient(idx, self.files)
+        patient_img, age_index, name = load_patient(idx, self.files)
         # Apply transform if any
         if self.transform:
             image = self.transform(patient_img)
         # crop the volume to 224
         image = image[:, 16:240, 16:240, 16:240]
-        return image, age_index
+        return image, age_index, name
            
 class BrainDataset_2D_Single(Dataset):
     def __init__(self, files, id, transform):
         
-        patient_img, self.age_index = load_patient(id, files)
+        patient_img, self.age_index, self.name = load_patient(id, files)
         if transform:
             patient_img = transform(patient_img)
         # crop the volume to 224
@@ -108,7 +109,7 @@ class BrainDataset_2D_Single(Dataset):
        
     def __getitem__(self, idx):
         image = self.slices[idx]
-        return image, self.age_index
+        return image, self.age_index, self.name
     
     def __len__(self):
         return len(self.slices)
@@ -120,8 +121,8 @@ class BrainDataset_2D(BrainDataset_3D):
         self.dataset = ConcatDataset(self.patient_datasets)
         
     def __getitem__(self, idx):
-        image_slices, age_index = self.dataset[idx]
-        return image_slices, age_index
+        image_slices, age_index, name = self.dataset[idx]
+        return image_slices, age_index, name
     
     def __len__(self):
         return len(self.dataset)
@@ -133,11 +134,12 @@ if __name__ == "__main__":
     data_set = BrainDataset_2D(
         data_dir, age_dir, mode="train", transform=normalise_percentile
     )
-    data_loader = DataLoader(data_set, batch_size=64, shuffle=True)
+    data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
     # check data
-    for i, (x, age) in enumerate(data_loader):
+    for i, (x, age, name) in enumerate(data_loader):
         print(x.shape, age)
         print(x.min(), x.max())
+        print(name)
         print(data_set.__len__())
         break
     
