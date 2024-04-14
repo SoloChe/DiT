@@ -24,19 +24,18 @@ from copy import deepcopy
 from glob import glob
 from time import time
 import argparse
-import logging
+
 import os
 
-from models import DiT_models
+from models.models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
-from torch.utils.tensorboard import SummaryWriter
-
+from utils import create_logger
 
 from data_med import BrainDataset_3D, BrainDataset_2D
 from translation import sample_from_noise
 from utils import load_from_checkpoint
-import monai.data as md
+
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -54,7 +53,6 @@ def update_ema(ema_model, model, decay=0.9999):
         # TODO: Consider applying only to params that require_grad to avoid small numerical changes of pos_embed
         ema_params[name].mul_(decay).add_(param.data, alpha=1 - decay)
 
-
 def requires_grad(model, flag=True):
     """
     Set requires_grad flag for all parameters in a model.
@@ -62,37 +60,11 @@ def requires_grad(model, flag=True):
     for p in model.parameters():
         p.requires_grad = flag
 
-
 def cleanup():
     """
     End DDP training.
     """
     dist.destroy_process_group()
-
-class DummyWriter:
-    def add_scalar(self, *args, **kwargs):
-        pass
-        # Implement other methods as needed
-        
-def create_logger(logging_dir):
-    """
-    Create a logger that writes to a log file and stdout.
-    """
-    if dist.get_rank() == 0:  # real logger
-        writer = SummaryWriter(logging_dir)
-        logging.basicConfig(
-            level=logging.INFO,
-            format='[\033[34m%(asctime)s\033[0m] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            handlers=[logging.StreamHandler(), logging.FileHandler(f"{logging_dir}/log.txt")]
-        )
-        logger = logging.getLogger(__name__)
-    else:  # dummy logger (does nothing)
-        logger = logging.getLogger(__name__)
-        logger.addHandler(logging.NullHandler())
-        writer = DummyWriter()
-    return logger, writer
-
 
 def center_crop_arr(pil_image, image_size):
     """

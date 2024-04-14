@@ -89,7 +89,7 @@ class PatchEmbed3D(nn.Module):
             pad_d = (self.patch_size[2] - D % self.patch_size[2]) % self.patch_size[2]
             x = F.pad(x, (0, pad_w, 0, pad_h, 0, pad_d))
             
-        x = self.proj(x) # BCHWD -> B n_embeds H/patch W/patch D/patch
+        x = self.proj(x) # BCHWD -> B n_embeds H/patch W/patch D/patch; L = H/patch * W/patch * D/patch
         
         if self.flatten:
             x = x.flatten(2).transpose(1, 2)  # NCHWD -> NLC
@@ -263,11 +263,16 @@ class DiT(nn.Module):
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+        
+        if pos_embed_dim in [1, 2, 3]:
+            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+        else: # learnable pos_embed
+            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=True) 
 
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
+        
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels, self.dim)
         self.initialize_weights()
 
@@ -283,16 +288,17 @@ class DiT(nn.Module):
         
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         
-        if self.pos_embed_dim == 3:
-            pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim) + 0.5))
-        elif self.pos_embed_dim == 2:
-            pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim)))
-        elif self.pos_embed_dim == 1:
-            pos_embed = get_1d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches))
-        else:
-            raise ValueError(f"Unsupported pos_embed_dim: {self.pos_embed_dim}")
+        if self.pos_embed_dim in [1, 2, 3]:
+            if self.pos_embed_dim == 3:
+                pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim) + 0.5))
+            elif self.pos_embed_dim == 2:
+                pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** (1/self.dim)))
+            elif self.pos_embed_dim == 1:
+                pos_embed = get_1d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches))
+            else:
+                raise ValueError(f"Unsupported pos_embed_dim: {self.pos_embed_dim}")
     
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+            self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.x_embedder.proj.weight.data
@@ -504,6 +510,9 @@ def DiT_XL_8(**kwargs):
 def DiT_XL_16(**kwargs):
     return DiT(depth=28, hidden_size=1152, patch_size=16, num_heads=16, **kwargs)
 
+def DiT_XL_32(**kwargs):
+    return DiT(depth=28, hidden_size=1152, patch_size=32, num_heads=16, **kwargs)
+
 def DiT_L_2(**kwargs):
     return DiT(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
 
@@ -544,6 +553,7 @@ DiT_models = {
     'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
     'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
     'DiT-B/16': DiT_B_16, 'DiT-L/16': DiT_L_16,  'DiT-XL/16': DiT_XL_16,
+    'DiT-XL/32': DiT_XL_32
 }
 
 if __name__ == "__main__":
@@ -553,7 +563,7 @@ if __name__ == "__main__":
     # patches = patcher(x)
     # print(patches.shape)
     
-    model = DiT_B_16(input_size=224,
+    model = DiT_XL_32(input_size=224,
                     in_channels=1,
                     dim=3,
                     pos_embed_dim=1)

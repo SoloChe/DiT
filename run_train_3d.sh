@@ -2,14 +2,14 @@
 
 #SBATCH --job-name='train_dit'
 #SBATCH --nodes=1    
-#SBATCH --mem=32G                 
+#SBATCH --mem=64G                 
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:a100:2
 #SBATCH -p general                
 #SBATCH -q public
             
-#SBATCH -t 03-00:00:00               
+#SBATCH -t 02-00:00:00               
             
 #SBATCH -e ./slurm_out/slurm.%j.err
 #SBATCH -o ./slurm_out/slurm.%j.out
@@ -23,11 +23,11 @@ data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 
 # resume_checkpoint="./results/001-DiT-XL-16-3D/checkpoints/0004700.pt"
 
-MODEL_FLAGS="--model DiT-XL/16 --pos-embed-dim 3"
+MODEL_FLAGS="--model DiT-XL/32 --pos-embed-dim 4"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --num-classes 65 \
             --image-size 224 --in-channels 1 --dim 3\
-            --global-batch-size 8 --epochs 8000 --num-workers 4"
+            --global-batch-size 6 --epochs 8000 --num-workers 4"
 
 SAMPLE_FLAGS="--labels 60\
               --ckpt-every 2000 --log-every 100"

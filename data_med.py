@@ -70,6 +70,7 @@ class BrainDataset_3D(Dataset):
             image_dir = image_dir / "val"
             
         images = sorted(list(image_dir.glob('IXI*')))
+        # images = sorted(list(image_dir.iterdir()))
         age_dict, age_map, age_freq = get_age(age_file)
         self.mode = mode
         self.transform = transform

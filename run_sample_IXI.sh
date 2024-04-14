@@ -4,8 +4,8 @@
 #SBATCH --nodes=1                       
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:1
-#SBATCH --mem=16G
+#SBATCH --gres=gpu:a100:1
+#SBATCH --mem=64G
 #SBATCH -p general                
 #SBATCH -q public
             
@@ -23,22 +23,22 @@ age_path="/data/amciilab/yiming/DATA/brain_age/masterdata.csv"
 
 dim=2
 pos_embed_dim=2
-
-
-for num_noise_steps in 50 100
+steps=0300000
+save=True
+for num_noise_steps in 50 80 100
 do
-        for cfg_scale in 1.5 2.0 2.5
+        for cfg_scale in 1.5 2.0
         do
-                log_path="./logs_new/002-DiT-XL-16-${dim}D-${cfg_scale}-${num_noise_steps}"
+                log_path="./logs_new/002-DiT-XL-16-${dim}D-${cfg_scale}-${num_noise_steps}-${steps}"
 
                 MODEL_FLAGS="--model DiT-XL/16 --pos-embed-dim $pos_embed_dim\
-                                --ckpt ./results/001-DiT-XL-16-2D/checkpoints/0190000.pt"
+                                --ckpt ./results/001-DiT-XL-16-2D/checkpoints/${steps}.pt"
 
-                DATA_FLAGS="--data-path $data_path --age-path $age_path --num-batches 20 --batch-size 112\
+                DATA_FLAGS="--data-path $data_path --age-path $age_path --num-batches 20 --batch-size 224\
                         --num-classes 65 --image-size 224 --in-channels 1 --dim $dim"
 
                 SAMPLE_FLAG="--num-noise-steps $num_noise_steps --cfg-scale $cfg_scale --from-noise False\
-                                --log-path $log_path"
+                                --log-path $log_path --save $save"
 
                 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
                 export MASTER_ADDR=$master_addr
