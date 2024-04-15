@@ -32,7 +32,7 @@ from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 from utils import create_logger
 
-from data_med import BrainDataset_3D, BrainDataset_2D
+from data_med import BrainDataset_3D, BrainDataset_2D, BrainDataset_3D_Patch
 from translation import sample_from_noise
 from utils import load_from_checkpoint
 
@@ -170,7 +170,8 @@ def main(args):
     # ])
     # dataset = ImageFolder(args.data_path, transform=transform)
     if args.dim == 3: 
-        dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
+        # dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
+        dataset = BrainDataset_3D_Patch(args.data_path, args.age_path, mode="train")
     else:
         dataset = BrainDataset_2D(args.data_path, args.age_path, mode="train")
     

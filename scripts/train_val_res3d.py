@@ -79,13 +79,15 @@ def main(args):
                     
                     # select from reversed_age_map
                     pred_ages = torch.tensor([reversed_age_map[i.item()] for i in pred_age_index], dtype=torch.float32)
+                    true_ages = torch.tensor([reversed_age_map[i.item()] for i in y], dtype=torch.float32)
                     pred_ages = pred_ages.to(device)
-                    
-                    mae = torch.abs(pred_ages - y.float())
+                    true_ages = true_ages.to(device)
+                    mae = torch.abs(pred_ages - true_ages)
                     MAE.append(mae)
                    
                 MAE = torch.cat(MAE)
-                print(f'MAE shape{MAE.shape}')
+                # print(f'mae shape{mae.shape}')
+                # print(f'MAE shape{MAE.shape}')
                 MAE = torch.mean(MAE)
                       
                 logger.info(f"Epoch {epoch}, mae={MAE:.4f}")
@@ -98,11 +100,11 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/extracted/")
     parser.add_argument("--age_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
     parser.add_argument("--logging_dir", type=str, default="logs_res/")
-    parser.add_argument("--model_depth", type=int, default=50)
+    parser.add_argument("--model_depth", type=int, default=18)
     parser.add_argument("--num_classes", type=int, default=65)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--val_freq", type=int, default=1)
     args = parser.parse_args()
     

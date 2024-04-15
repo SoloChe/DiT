@@ -25,9 +25,9 @@ dim=2
 pos_embed_dim=2
 steps=0300000
 save=True
-for num_noise_steps in 50 80 100
+for num_noise_steps in 50
 do
-        for cfg_scale in 1.5 2.0
+        for cfg_scale in 2.0
         do
                 log_path="./logs_new/002-DiT-XL-16-${dim}D-${cfg_scale}-${num_noise_steps}-${steps}"
 

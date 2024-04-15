@@ -106,10 +106,10 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     
     if name is not None:
         if args.dim == 3:
-            samples = samples.squeeze(1) # 1, 256, 256, 256
-            samples = torch.einsum("chwd->dchw", samples)  # 256, 1, 256, 256
+            samples = samples.squeeze(1) # 1, 256, 256, 256 or 1 32 32 32
+            samples = torch.einsum("chwd->dchw", samples)  # 256, 1, 256, 256 or 32, 1, 32, 32
             # select middle 20 slice
-            samples = samples[118:138,...] # 20, 1, 256, 256
+            samples = samples[6:26,...] # 20, 1, 32, 32
             
         samples = make_grid(samples, nrow=4)
         save_image(samples, Path(args.img_dir) / f"{name}.png")
@@ -128,7 +128,7 @@ def calculate_patient_mae(source, index, samples, start, end):
     n_slices_per_patient = 224
     
     import scipy.stats as stats
-    _, age_map, age_freq = get_age("/data/amciilab/yiming/DATA/brain_age/masterdata.csv") # age:index
+    _, age_map, _ = get_age("/data/amciilab/yiming/DATA/brain_age/masterdata.csv") # age:index
     reversed_age_map = {v: k for k, v in age_map.items()} # index:age
 
     diff_map = (source - samples)**2 # (len(age_map), batch_size, 1, 256, 256)
@@ -141,20 +141,18 @@ def calculate_patient_mae(source, index, samples, start, end):
     age_true_slice = age_true_slice.reshape(-1, n_slices_per_patient) # n_patients, n_slices_per_patient
     age_pred_slice = age_pred_slice.reshape(-1, n_slices_per_patient) # n_patients, n_slices_per_patient
      
-    age_pred_slice_partial = age_pred_slice[:,(112-start):(112+end)]
+    age_pred_slice_partial = age_pred_slice[:,(112-start):(112+end)] 
     age_true_slice_partial = age_true_slice[:,(112-start):(112+end)]
     
-    age_pred_mod = stats.mode(age_pred_slice_partial, axis=1)[0]
-    age_pred_mean = age_pred_slice_partial.mean(axis=1)
+    age_pred_mod = stats.mode(age_pred_slice_partial, axis=1)[0] # n_patients
+    age_pred_mean = age_pred_slice_partial.mean(axis=1) # n_patients
 
-    age_true_patient = stats.mode(age_true_slice_partial, axis=1)[0]
+    age_true_patient = stats.mode(age_true_slice_partial, axis=1)[0] # n_patients
     
-    mae_mod = np.abs(age_true_patient - age_pred_mod)
-    mae_mean = np.abs(age_true_patient - age_pred_mean)
+    mae_mod = np.abs(age_true_patient - age_pred_mod) # n_patients
+    mae_mean = np.abs(age_true_patient - age_pred_mean) # n_patients
     
-    mae_mean_batch = mae_mean.mean()
-    mae_mod_batch = mae_mod.mean()
-    return mae_mod, mae_mean, mae_mod_batch, mae_mean_batch              
+    return mae_mod, mae_mean             
     
 def main(args):
     # Setup PyTorch:
@@ -203,8 +201,11 @@ def main(args):
         
         loader = DataLoader(data_test, batch_size=args.batch_size, shuffle=False)
         
-        running_mae_mod = 0
-        running_mae_mean = 0
+        
+        
+        running_mae_mod = [0 for _ in range(5, 101, 5)]
+        running_mae_mean = [0 for _ in range(5, 101, 5)]
+        
         for i, data in enumerate(loader):
             
             if i >= args.num_batches:
@@ -213,7 +214,7 @@ def main(args):
             source, lab, id = data
             source = source.to(device)
             
-            logger.info('-------------------------------------------------------------------')
+            logger.info('-'*80)
             logger.info(f"batch {i} is being translated...")
             
             # Translation
@@ -221,19 +222,22 @@ def main(args):
             logger.info(f"translation of batch {i} finished with sample shape: {SAMPLES.shape}")
             
             # Age prediction
-            for num_slice in range(5, 101, 5):
-                mae_mod, mae_mean, mae_mode_batch, mae_mean_batch = calculate_patient_mae(source, lab, SAMPLES, num_slice, num_slice)
-                running_mae_mod += mae_mode_batch
-                running_mae_mean += mae_mean_batch
+            for j, num_slice in enumerate(range(5, 101, 5)):
+                mae_mode, mae_mean = calculate_patient_mae(source, lab, SAMPLES, num_slice, num_slice)
                 
-                logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+                
+                logger.info('+'*50)
                 logger.info(f"MAE for batch {i} with middle {num_slice} slices:")
-                for j, patient_name in enumerate(set(id)):
-                    logger.info(f"patient: {patient_name}")
-                    logger.info(f"patient_name: {patient_name}, mod {mae_mod[j]}, mean {mae_mean[j]}")
-                logger.info(f"running MAE: mod {running_mae_mod/(i+1)}, mean {running_mae_mean/(i+1)}")
-                logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-            logger.info('-------------------------------------------------------------------')
+                
+                patient_name = list(set(id))[0] # only 1 patient per batch
+                running_mae_mod[j] += mae_mode[0]
+                running_mae_mean[j] += mae_mean[0]
+    
+                logger.info(f"patient: {patient_name}")
+                logger.info(f"mod {mae_mode[0]}, mean {mae_mean[0]}")
+                logger.info(f"running MAE: mod {running_mae_mod[j]/(i+1)}, mean {running_mae_mean[j]/(i+1)}")
+                logger.info('+'*50)
+            logger.info('-'*80)
             
             # Saving samples
             if args.save:

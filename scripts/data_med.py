@@ -11,6 +11,7 @@ import numpy as np
 import os
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, WeightedRandomSampler
 import nibabel as nib
+from skimage.util import view_as_blocks
 
 def get_age(file_path):
     data = {}
@@ -51,7 +52,8 @@ def load_patient(idx, files):
     patient = files[idx]
     patient_img = nib.load(patient['img'])
     patient_img = patient_img.get_fdata()
-    patient_img = torch.from_numpy(patient_img).float().unsqueeze(0) # 1, 256, 256, 256
+    patient_img = patient_img[16:240, 16:240, 16:240] # crop the volume to 224 
+    patient_img = torch.from_numpy(patient_img).float().unsqueeze(0) # 1, 224, 224, 224
     age_index = patient['age_idx']
     name = patient['name']
     return patient_img, age_index, name
@@ -83,7 +85,6 @@ class BrainDataset_3D(Dataset):
                 print(f"Image {img.name} does not have an age label.")
 
         self.files = files
-        
     def __len__(self):
         return len(self.files)
 
@@ -93,19 +94,46 @@ class BrainDataset_3D(Dataset):
         # Apply transform if any
         if self.transform:
             image = self.transform(patient_img)
-        # crop the volume to 224
-        image = image[:, 16:240, 16:240, 16:240]
         return image, age_index, name
+    
+    
+class BrainDataset_3D_Patch_Single(Dataset):
+    def __init__(self, files, id, transform):
+        patient_img, self.age_index, self.name = load_patient(id, files) # 1, 224, 224, 224
+        if transform:
+            patient_img = transform(patient_img) 
+            
+        patient_blocks = view_as_blocks(patient_img[0].numpy(), block_shape=(32, 32, 32)) # 7, 7, 7, 32, 32, 32
+        self.patient_blocks = patient_blocks.reshape(1, -1, 32, 32, 32) # 1, n_patches, 32, 32, 32
+        
+    def __len__(self):
+        return self.patient_blocks.shape[1]
+    
+    def __getitem__(self, idx):
+        block = torch.from_numpy(self.patient_blocks[0:1, idx, ...])
+        return block, self.age_index, self.name
+
+class BrainDataset_3D_Patch(BrainDataset_3D):
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
+        super().__init__(image_dir, age_file, mode, transform)
+        self.patient_datasets = [BrainDataset_3D_Patch_Single(self.files, i, transform) for i in range(len(self.files))]
+        self.dataset = ConcatDataset(self.patient_datasets)
+        
+    def __getitem__(self, idx):
+        image_blocks, age_index, name = self.dataset[idx]
+        return image_blocks, age_index, name
+    
+    def __len__(self):
+        return len(self.dataset)
+    
            
 class BrainDataset_2D_Single(Dataset):
     def __init__(self, files, id, transform):
         
-        patient_img, self.age_index, self.name = load_patient(id, files)
+        patient_img, self.age_index, self.name = load_patient(id, files) # 1, 224, 224, 224
         if transform:
             patient_img = transform(patient_img)
-        # crop the volume to 224
-        patient_img = patient_img[:, 16:240, 16:240, 16:240]
-         
+        # 1, 224, 224
         self.slices = [patient_img[..., i] for i in range(patient_img.shape[-1])] # from the last slices, shape 1, 256, 256
        
     def __getitem__(self, idx):
@@ -132,7 +160,7 @@ class BrainDataset_2D(BrainDataset_3D):
 if __name__ == "__main__":
     data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
     age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
-    data_set = BrainDataset_2D(
+    data_set = BrainDataset_3D_Patch(
         data_dir, age_dir, mode="train", transform=normalise_percentile
     )
     data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
