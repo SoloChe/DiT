@@ -1,6 +1,6 @@
-# import monai.data as md
-# from monai import transforms
-# from monai.utils import first
+import sys 
+import os
+sys.path.append(os.path.realpath('./'))
 
 from pathlib import Path
 import csv
@@ -8,10 +8,11 @@ import random
 import torch
 from torchvision.utils import make_grid, save_image
 import numpy as np
-import os
+
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, WeightedRandomSampler
 import nibabel as nib
 from skimage.util import view_as_blocks
+
 
 def get_age(file_path):
     data = {}
@@ -158,21 +159,34 @@ class BrainDataset_2D(BrainDataset_3D):
    
 
 if __name__ == "__main__":
-    data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
-    age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
-    data_set = BrainDataset_3D_Patch(
+    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/extracted/")
+    # age_dir = Path("/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
+    
+    data_dir = Path("/data/amciilab/Data_yiming")
+    age_dir = Path("/data/amciilab/Data_yiming/masterdata.csv")
+    
+    _, age_map, age_freq = get_age(age_dir) # age:index
+    reversed_age_map = {v: k for k, v in age_map.items()} # index:age
+
+    # let's start with 2D dataset, which the top view of 3D MRI
+    data_set = BrainDataset_2D(
         data_dir, age_dir, mode="train", transform=normalise_percentile
-    )
+    ) # for validation, change mode to "val"
+    
+    # Than, 3D dataset
+    # data_set = BrainDataset_3D(
+    #     data_dir, age_dir, mode="train", transform=normalise_percentile
+    # ) 
+    
     data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
     # check data
-    for i, (x, age, name) in enumerate(data_loader):
-        print(x.shape, age)
-        print(x.min(), x.max())
-        print(name)
-        print(data_set.__len__())
+    for i, (x, age_index, name) in enumerate(data_loader):
+        print(f'image_shape: {x.shape}')
+        # use reversed_age_map to get the age by its index
+        age1 = reversed_age_map[age_index[0].item()]
+        age2 = reversed_age_map[age_index[1].item()]
+        print(f'age1: {age1}, age2: {age2}')
+        print(f'image_min: {x.min()}, image_max: {x.max()}')
+        print(f'patient_name: {name}')
+        print(f'# of data: {data_set.__len__()}')
         break
-    
-    # data_dir = Path("/data/amciilab/yiming/DATA/brain_age/preprocessed_data_256_10_IXI")
-    # data_loader = get_brainage_data_iter(data_dir=data_dir,age_file=age_dir, batch_size=2, split="train", num_patients=10)
-    # x, age = next(data_loader)
-    # print(x.shape, age)

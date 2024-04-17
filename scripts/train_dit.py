@@ -7,6 +7,10 @@
 """
 A minimal training script for DiT using PyTorch DDP.
 """
+import sys
+import os
+sys.path.append(os.path.realpath('./'))
+
 import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -29,7 +33,7 @@ import os
 
 from models.models import DiT_models
 from diffusion import create_diffusion
-from diffusers.models import AutoencoderKL
+# from diffusers.models import AutoencoderKL
 from utils import create_logger
 
 from data_med import BrainDataset_3D, BrainDataset_2D, BrainDataset_3D_Patch
@@ -109,7 +113,7 @@ def main(args):
     
     # Setup an experiment folder:
     if rank == 0:
-        # writer = SummaryWriter(args.results_dir)  # Create a TensorBoard logging directory
+        
         os.makedirs(args.results_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
        
         suffix = '-3D' if args.dim == 3 else '-2D' 
@@ -270,8 +274,8 @@ def main(args):
                     logger.info("Sampling from noise...")
                     
                     model.eval()
-                    logger.info(f"model training mode: {model.training}")
-                    logger.info(f"model module training mode : {model.module.training}", )
+                    # logger.info(f"model training mode: {model.training}")
+                    # logger.info(f"model module training mode : {model.module.training}", )
                     _, _ = sample_from_noise(model.module, diffusion, device, args, name=train_steps)
                     model.train()
                     

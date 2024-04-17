@@ -52,6 +52,6 @@ do
                         --nnodes=1\
                         --rdzv-backend=c10d\
                         --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT\
-                        translation.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAG
+                        ./scripts/translation.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAG
         done
 done

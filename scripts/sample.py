@@ -7,6 +7,10 @@
 """
 Sample new images from a pre-trained DiT.
 """
+import sys
+import os
+sys.path.append(os.path.realpath('./'))
+
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
