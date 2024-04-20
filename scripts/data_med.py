@@ -14,7 +14,10 @@ import nibabel as nib
 from skimage.util import view_as_blocks
 
 
-def get_age(file_path):
+def get_age(file_path, prefix=None):
+    '''
+    prefix is used to filter the data, e.g., IXI only
+    '''
     data = {}
     with open(file_path, "r") as csvfile:
         csv_reader = csv.reader(
@@ -25,8 +28,9 @@ def get_age(file_path):
             if row[0] == "patientid":
                 continue
             # IXI only
-            if not (row[0].split("/")[-1]).startswith("IXI"):
-                continue
+            if prefix:
+                if not (row[0].split("/")[-1]).startswith(prefix):
+                    continue
             
             data[row[0].split("/")[-1]] = int(float(row[1]))
 
@@ -56,11 +60,12 @@ def load_patient(idx, files):
     patient_img = patient_img[16:240, 16:240, 16:240] # crop the volume to 224 
     patient_img = torch.from_numpy(patient_img).float().unsqueeze(0) # 1, 224, 224, 224
     age_index = patient['age_idx']
+    age = patient['age']
     name = patient['name']
-    return patient_img, age_index, name
+    return patient_img, age_index, name, age
 
 class BrainDataset_3D(Dataset):
-    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile, prefix='IXI'):
         if isinstance(image_dir, str):
             image_dir = Path(image_dir)
         # images = image_dir.iterdir()
@@ -71,17 +76,20 @@ class BrainDataset_3D(Dataset):
             image_dir = image_dir / "train"
         elif mode == "val":
             image_dir = image_dir / "val"
+        
+        if prefix:
+            images = sorted(list(image_dir.glob(prefix+'*')))
+        else:
+            images = sorted(list(image_dir.iterdir()))
             
-        images = sorted(list(image_dir.glob('IXI*')))
-        # images = sorted(list(image_dir.iterdir()))
-        age_dict, age_map, age_freq = get_age(age_file)
+        age_dict, age_map, _ = get_age(age_file, prefix)
         self.mode = mode
         self.transform = transform
         files = []
         for img in images:
             try:
                 age = int(float(age_dict[img.name]))
-                files.append({"img": img, "age_idx": age_map[age], 'name': img.name})
+                files.append({"img": img, "age":age, "age_idx": age_map[age], 'name': img.name})
             except KeyError:
                 print(f"Image {img.name} does not have an age label.")
 
@@ -91,16 +99,16 @@ class BrainDataset_3D(Dataset):
 
     def __getitem__(self, idx):
         # Load NIfTI image 
-        patient_img, age_index, name = load_patient(idx, self.files)
+        patient_img, age_index, name, age = load_patient(idx, self.files)
         # Apply transform if any
         if self.transform:
             image = self.transform(patient_img)
-        return image, age_index, name
+        return image, age_index, name, age
     
     
 class BrainDataset_3D_Patch_Single(Dataset):
     def __init__(self, files, id, transform):
-        patient_img, self.age_index, self.name = load_patient(id, files) # 1, 224, 224, 224
+        patient_img, self.age_index, self.name, self.age = load_patient(id, files) # 1, 224, 224, 224
         if transform:
             patient_img = transform(patient_img) 
             
@@ -112,17 +120,17 @@ class BrainDataset_3D_Patch_Single(Dataset):
     
     def __getitem__(self, idx):
         block = torch.from_numpy(self.patient_blocks[0:1, idx, ...])
-        return block, self.age_index, self.name
+        return block, self.age_index, self.name, self.age
 
 class BrainDataset_3D_Patch(BrainDataset_3D):
-    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
-        super().__init__(image_dir, age_file, mode, transform)
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile, prefix='IXI'):
+        super().__init__(image_dir, age_file, mode, transform, prefix)
         self.patient_datasets = [BrainDataset_3D_Patch_Single(self.files, i, transform) for i in range(len(self.files))]
         self.dataset = ConcatDataset(self.patient_datasets)
         
     def __getitem__(self, idx):
-        image_blocks, age_index, name = self.dataset[idx]
-        return image_blocks, age_index, name
+        image_blocks, age_index, name, age = self.dataset[idx]
+        return image_blocks, age_index, name, age
     
     def __len__(self):
         return len(self.dataset)
@@ -131,7 +139,7 @@ class BrainDataset_3D_Patch(BrainDataset_3D):
 class BrainDataset_2D_Single(Dataset):
     def __init__(self, files, id, transform):
         
-        patient_img, self.age_index, self.name = load_patient(id, files) # 1, 224, 224, 224
+        patient_img, self.age_index, self.name, self.age = load_patient(id, files) # 1, 224, 224, 224
         if transform:
             patient_img = transform(patient_img)
         # 1, 224, 224
@@ -139,20 +147,20 @@ class BrainDataset_2D_Single(Dataset):
        
     def __getitem__(self, idx):
         image = self.slices[idx]
-        return image, self.age_index, self.name
+        return image, self.age_index, self.name, self.age
     
     def __len__(self):
         return len(self.slices)
 
 class BrainDataset_2D(BrainDataset_3D):
-    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile):
-        super().__init__(image_dir, age_file, mode, transform)
+    def __init__(self, image_dir, age_file, mode, transform=normalise_percentile, prefix='IXI'):
+        super().__init__(image_dir, age_file, mode, transform, prefix)
         self.patient_datasets = [BrainDataset_2D_Single(self.files, i, transform) for i in range(len(self.files))]
         self.dataset = ConcatDataset(self.patient_datasets)
         
     def __getitem__(self, idx):
-        image_slices, age_index, name = self.dataset[idx]
-        return image_slices, age_index, name
+        image_slices, age_index, name, age = self.dataset[idx]
+        return image_slices, age_index, name, age
     
     def __len__(self):
         return len(self.dataset)
@@ -170,7 +178,7 @@ if __name__ == "__main__":
 
     # let's start with 2D dataset, which the top view of 3D MRI
     data_set = BrainDataset_2D(
-        data_dir, age_dir, mode="train", transform=normalise_percentile
+        data_dir, age_dir, mode="train", transform=normalise_percentile, prefix=None
     ) # for validation, change mode to "val"
     
     # Than, 3D dataset
@@ -180,12 +188,13 @@ if __name__ == "__main__":
     
     data_loader = DataLoader(data_set, batch_size=2, shuffle=True)
     # check data
-    for i, (x, age_index, name) in enumerate(data_loader):
+    for i, (x, age_index, name, age) in enumerate(data_loader):
         print(f'image_shape: {x.shape}')
         # use reversed_age_map to get the age by its index
-        age1 = reversed_age_map[age_index[0].item()]
-        age2 = reversed_age_map[age_index[1].item()]
-        print(f'age1: {age1}, age2: {age2}')
+        # age1 = reversed_age_map[age_index[0].item()]
+        # age2 = reversed_age_map[age_index[1].item()]
+        print(f'age_index1: {age_index[0]}, age_index2: {age_index[1]}')
+        print(f'age1: {age[0]}, age2: {age[1]}')
         print(f'image_min: {x.min()}, image_max: {x.max()}')
         print(f'patient_name: {name}')
         print(f'# of data: {data_set.__len__()}')

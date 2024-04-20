@@ -115,11 +115,11 @@ def main(args):
         spatial_dims=3,
         in_channels=1,
         out_channels=1,
-        num_channels=(32, 64, 64),
+        num_channels=(32, 64, 64, 128),
         latent_channels=3,
         num_res_blocks=1,
         norm_num_groups=16,
-        attention_levels=(False, False, True),
+        attention_levels=(False, False, False, True),
         )
         autoencoder.to(device)
         
@@ -140,10 +140,6 @@ def main(args):
         
         logger.info(f"Autoencoder Model with {sum(p.numel() for p in autoencoder.parameters()) / 1024 / 1024:.2f}M parameters.")
         logger.info(f"Discriminator Model with {sum(p.numel() for p in discriminator.parameters()) / 1024 / 1024:.2f}M parameters.")
-        
-        print(f'total    : {info.total / 1024**2}')
-        print(f'free     : {info.free / 1024**2}')
-        print(f'used     : {info.used/ 1024**2}')
        
         # Training loop
         train_steps = 0
@@ -156,12 +152,7 @@ def main(args):
            
             for step, data in enumerate(train_loader):
                 images = data[0].to(device)  # [B, C, H, W, D]
-                print(f'images shape: {images.shape}')
-                
-                print(f'total    : {info.total/1024**2}')
-                print(f'free     : {info.free/1024**2}')
-                print(f'used     : {info.used/1024**2}')
-                
+                 
                 train_steps += 1
                 # Generator part
                 optimizer_g.zero_grad(set_to_none=True)
@@ -216,11 +207,11 @@ def main(args):
                         
                         torch.save(checkpoints, os.path.join(checkpoints_path, f"checkpoint_{train_steps}.pt"))
                         
-                        img_plot = images.detach().cpu().numpy() # [B, C, H, W, D]
+                        img_plot = images.detach().cpu() # [B, C, H, W, D]
                         img_plot = img_plot[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
                         img_plot = torch.einsum('chwd->dchw', img_plot) # [20, 1, H, W]
                         
-                        recon_imgs = reconstruction.detach().cpu().numpy() # [B, C, H, W, D]
+                        recon_imgs = reconstruction.detach().cpu() # [B, C, H, W, D]
                         recon_imgs = recon_imgs[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
                         recon_imgs = torch.einsum('chwd->dchw', recon_imgs) # [20, 1, H, W]
                         
@@ -243,11 +234,11 @@ if __name__ == "__main__":
     parser.add_argument("--age_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--global_seed", type=int, default=42)
     parser.add_argument("--autoencoder_warm_up_n_epochs", type=int, default=5)
-    parser.add_argument("--log_steps", type=int, default=50)
-    parser.add_argument("--save_steps", type=int, default=1)
+    parser.add_argument("--log_steps", type=int, default=10)
+    parser.add_argument("--save_steps", type=int, default=2000)
     
     
     args = parser.parse_args()

@@ -9,7 +9,7 @@
 #SBATCH -p general                
 #SBATCH -q public
             
-#SBATCH -t 00-5:00:00               
+#SBATCH -t 00-12:00:00               
             
 #SBATCH -e ./slurm_out/slurm.%j.err
 #SBATCH -o ./slurm_out/slurm.%j.out
@@ -18,4 +18,8 @@ module purge
 module load mamba/latest
 source activate torch_base
 
-~/.conda/envs/torch_base/bin/python train_val_res3d.py --batch_size 8
+batch_size=8
+loss_type=2
+logging_dir="./logs_res/res18_all_loss$loss_type"
+
+~/.conda/envs/torch_base/bin/python ./scripts/train_val_res3d.py --loss_type $loss_type --batch_size $batch_size --logging_dir $logging_dir

@@ -7,9 +7,9 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:a100:1
 #SBATCH -p general                
-#SBATCH -q debug
+#SBATCH -q public
             
-#SBATCH -t 00-00:05:00               
+#SBATCH -t 01-00:00:00               
             
 #SBATCH -e ./slurm_out/slurm.%j.err
 #SBATCH -o ./slurm_out/slurm.%j.out
@@ -18,4 +18,6 @@ module purge
 module load mamba/latest
 source activate torch_base
 
-~/.conda/envs/torch_base/bin/python ./scripts/train_encoder.py --batch_size 1
+batch_size=1
+epochs=200
+~/.conda/envs/torch_base/bin/python ./scripts/train_encoder.py --batch_size $batch_size --epochs $epochs

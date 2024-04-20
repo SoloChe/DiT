@@ -241,7 +241,8 @@ class DiT(nn.Module):
         num_classes=1000,
         learn_sigma=True,
         dim=3,
-        pos_embed_dim=1
+        pos_embed_dim=1,
+        return_hidden_states=False
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -251,6 +252,7 @@ class DiT(nn.Module):
         self.num_heads = num_heads
         self.dim = dim
         self.pos_embed_dim = pos_embed_dim
+        self.return_hidden_states=return_hidden_states
         
         if self.dim == 3:
             self.x_embedder = PatchEmbed3D(input_size, patch_size, in_channels, hidden_size, bias=True)
@@ -365,11 +367,15 @@ class DiT(nn.Module):
         t = self.t_embedder(t)                   # (N, D)
         y = self.y_embedder(y, self.training)    # (N, D)
         c = t + y                                # (N, D)
+        hidden_states_out = []
         for block in self.blocks:
             x = block(x, c)                      # (N, T, D)
+            if self.return_hidden_states:
+                hidden_states_out.append(x)
         x = self.final_layer(x, c)                # (N, T, patch_size ** 3 * out_channels)
         x = self.unpatchify3D(x)  if self.dim == 3 else self.unpatchify(x)       # (N, out_channels, H, W)
-                   
+        if self.return_hidden_states:
+            return x, hidden_states_out   
         return x
 
     def forward_with_cfg(self, x, t, y, cfg_scale):

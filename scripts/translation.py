@@ -215,7 +215,7 @@ def main(args):
             if i >= args.num_batches:
                 break
             
-            source, lab, id = data
+            source, lab, id, age = data
             source = source.to(device)
             
             logger.info('-'*80)

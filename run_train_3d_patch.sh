@@ -23,14 +23,14 @@ NUM_GPUS=2
 age_path="/data/amciilab/yiming/DATA/brain_age/masterdata.csv"
 data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 
-# resume_checkpoint="./results/001-DiT-XL-16-3D/checkpoints/0004700.pt"
+resume_checkpoint="./results/006-DiT-XL-2-3D/checkpoints/0022000.pt"
 
 
-MODEL_FLAGS="--model DiT-XL/4 --pos-embed-dim 4"
+MODEL_FLAGS="--model DiT-XL/2 --pos-embed-dim 4 --resume-checkpoint $resume_checkpoint"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --num-classes 65 \
             --image-size 32 --in-channels 1 --dim 3\
-            --global-batch-size 40 --epochs 8000 --num-workers 4"
+            --global-batch-size 10 --epochs 8000 --num-workers 4"
 
 SAMPLE_FLAGS="--labels 60\
               --ckpt-every 2000 --log-every 100"
