@@ -1,10 +1,10 @@
-import os
-import sys
-sys.path.append(os.path.realpath('./'))
+# import os
+# import sys
+# sys.path.append(os.path.realpath('./'))
 import torch
 import torch.nn as nn
 from monai.networks.nets import UNETR
-from models import DiT, TimestepEmbedder, LabelEmbedder
+from models.models import DiT
 from collections.abc import Sequence
 
 
@@ -13,7 +13,6 @@ from collections.abc import Sequence
 class U_DiT(UNETR):
     def __init__(self,
                 in_channels: int,
-                out_channels: int,
                 img_size: Sequence[int] | int,
                 feature_size: int = 16,
                 hidden_size: int = 768,
@@ -36,13 +35,13 @@ class U_DiT(UNETR):
         
         
         super().__init__(in_channels=in_channels,
-                        out_channels=out_channels,
+                        out_channels=in_channels*2 if learn_sigma else in_channels,
                         img_size=img_size,
                         feature_size=feature_size,
                         hidden_size=hidden_size,
                         mlp_dim=mlp_dim,
                         num_heads=num_heads,
-                        pos_embed=pos_embed,
+                        # pos_embed=pos_embed,
                         proj_type=proj_type,
                         norm_name=norm_name,
                         conv_block=conv_block,
@@ -55,10 +54,9 @@ class U_DiT(UNETR):
         self.learn_sigma = learn_sigma
         self.class_dropout_prob = class_dropout_prob
         self.num_classes = num_classes
-        self.t_embedder = TimestepEmbedder(feature_size)
-        self.y_embedder = LabelEmbedder(num_classes, feature_size, class_dropout_prob)
         
-        self.dit = DiT(input_size=img_size[0] if isinstance(img_size, tuple) else img_size,
+        # DiT_B_16: 12 layers, 12 heads, 768 hidden size, 3072 mlp size, 16 patch size
+        self.vit = DiT(input_size=img_size[0] if isinstance(img_size, tuple) else img_size,
                         patch_size=self.patch_size[0] if isinstance(self.patch_size, tuple) else self.patch_size,
                         in_channels=in_channels,
                         hidden_size=self.hidden_size,
@@ -67,33 +65,41 @@ class U_DiT(UNETR):
                         mlp_ratio=4.0,
                         class_dropout_prob=self.class_dropout_prob,
                         num_classes=self.num_classes,
-                        learn_sigma=True,
+                        learn_sigma=self.learn_sigma,
                         dim=spatial_dims,
                         pos_embed_dim=pos_embed_dim,
                         return_hidden_states=True)
     
     # TODO
     def forward(self, x_in, t, y):
-        x, hidden_states_out = self.dit(x_in, t, y)
-        print(f'x_in: {x_in.shape}')
+        hidden_states_out = self.vit(x_in, t, y)
+        x = hidden_states_out[-1]
+        # print(f'x: {x.shape}')
+        # print(f'x_in: {x_in.shape}')
         enc1 = self.encoder1(x_in)
-        print(f'enc1: {enc1.shape}')
+        # print(f'enc1: {enc1.shape}')
         x2 = hidden_states_out[3]
-        print(f'x2: {x2.shape}')
+        # print(f'x2: {x2.shape}')
         enc2 = self.encoder2(self.proj_feat(x2))
-        print(f'enc2: {enc2.shape}')
+        # print(f'enc2: {enc2.shape}')
         x3 = hidden_states_out[6]
-        print(f'x3: {x3.shape}')
+        # print(f'x3: {x3.shape}')
         enc3 = self.encoder3(self.proj_feat(x3))
-        print(f'enc3: {enc3.shape}')
+        # print(f'enc3: {enc3.shape}')
         x4 = hidden_states_out[9]
-        print(f'x4: {x4.shape}')
+        # print(f'x4: {x4.shape}')
         enc4 = self.encoder4(self.proj_feat(x4))
+        # print(f'enc4: {enc4.shape}')
         dec4 = self.proj_feat(x)
+        # print(f'dec4: {dec4.shape}')
         dec3 = self.decoder5(dec4, enc4)
+        # print(f'dec3: {dec3.shape}')
         dec2 = self.decoder4(dec3, enc3)
+        # print(f'dec2: {dec2.shape}')
         dec1 = self.decoder3(dec2, enc2)
+        # print(f'dec1: {dec1.shape}')
         out = self.decoder2(dec1, enc1)
+        # print(f'out: {out.shape}')
         return self.out(out)
         
     def forward_with_cfg(self, x, t, y, cfg_scale):
@@ -126,7 +132,9 @@ if __name__ == '__main__':
     model = U_DiT(img_size=(size, size, size), 
                   in_channels=1, 
                   out_channels=1,
-                  learn_sigma=False)
+                  learn_sigma=True)
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f'Number of parameters: {num_params/1024/1024:.2f}M')
     out = model(x, t, y)
     print(out.shape)
         

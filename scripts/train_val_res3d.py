@@ -128,7 +128,12 @@ def main(args):
                 logger.info(f"Epoch {epoch}, mae={MAE:.4f}")
         
         if epoch % args.save_freq == 0:
-            torch.save(model.state_dict(), f"{args.logging_dir}/model_{epoch}.pth")
+            checkpoint = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": opt.state_dict(),
+            }
+            torch.save(checkpoint, f"{args.logging_dir}/model_{epoch}.pth")
             
                 
             

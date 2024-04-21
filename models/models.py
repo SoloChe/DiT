@@ -274,8 +274,9 @@ class DiT(nn.Module):
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
-        
-        self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels, self.dim)
+        if not return_hidden_states: 
+            self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels, self.dim)
+            
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -320,10 +321,11 @@ class DiT(nn.Module):
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
         # Zero-out output layers:
-        nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
-        nn.init.constant_(self.final_layer.linear.weight, 0)
-        nn.init.constant_(self.final_layer.linear.bias, 0)
+        if not self.return_hidden_states:
+            nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
+            nn.init.constant_(self.final_layer.linear.weight, 0)
+            nn.init.constant_(self.final_layer.linear.bias, 0)
 
     def unpatchify3D(self, x):
         """
@@ -372,10 +374,13 @@ class DiT(nn.Module):
             x = block(x, c)                      # (N, T, D)
             if self.return_hidden_states:
                 hidden_states_out.append(x)
-        x = self.final_layer(x, c)                # (N, T, patch_size ** 3 * out_channels)
-        x = self.unpatchify3D(x)  if self.dim == 3 else self.unpatchify(x)       # (N, out_channels, H, W)
+        
+        if not self.return_hidden_states:
+            x = self.final_layer(x, c)                # (N, T, patch_size ** 3 * out_channels)
+            x = self.unpatchify3D(x)  if self.dim == 3 else self.unpatchify(x)       # (N, out_channels, H, W)
+        
         if self.return_hidden_states:
-            return x, hidden_states_out   
+            return hidden_states_out   
         return x
 
     def forward_with_cfg(self, x, t, y, cfg_scale):

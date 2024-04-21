@@ -104,14 +104,14 @@ def sample_from_noise(model, diffusion,  device, args, name=None):
     samples = diffusion.p_sample_loop(
         model.forward_with_cfg, z.shape, noise=z, noise_steps=None,
         clip_denoised=False, model_kwargs=model_kwargs, progress=True, device=device
-    ) # (2 * len(y), 1, 256, 256, 256) or (2 * len(y), 1, 256, 256) 
+    ) # (2 * len(y), 1, 224, 224, 224) or (2 * len(y), 1, 224, 224) or (2*len(y), patch_size, patch_size, patch_size)
     
-    samples, _ = samples.chunk(2, dim=0)  # Remove null class samples (len(y), 1, 256, 256, 256) or (len(y), 1, 256, 256)
+    samples, _ = samples.chunk(2, dim=0)  # Remove null class samples (len(y), 1, 224, 224, 224) or (len(y), 1, 224, 224)
     
     if name is not None:
         if args.dim == 3:
-            samples = samples.squeeze(1) # 1, 256, 256, 256 or 1 32 32 32
-            samples = torch.einsum("chwd->dchw", samples)  # 256, 1, 256, 256 or 32, 1, 32, 32
+            samples = samples.squeeze(1) # 1, 224, 224, 224 or 1 path_size, path_size, path_size
+            samples = torch.einsum("chwd->dchw", samples)  # 224, 1, 224, 224 or patch_size, 1, patch_size, patch_size
             # select middle 20 slice
             samples = samples[6:26,...] # 20, 1, 32, 32
             

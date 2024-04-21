@@ -10,7 +10,7 @@ A minimal training script for DiT using PyTorch DDP.
 import sys
 import os
 sys.path.append(os.path.realpath('./'))
-
+os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'INFO'
 import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -19,8 +19,6 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torchvision.datasets import ImageFolder
-from torchvision import transforms
 import numpy as np
 from collections import OrderedDict
 from PIL import Image
@@ -29,9 +27,7 @@ from glob import glob
 from time import time
 import argparse
 
-import os
-
-from models.models import DiT_models
+from models.U_DiT import U_DiT
 from diffusion import create_diffusion
 # from diffusers.models import AutoencoderKL
 from utils import create_logger
@@ -131,16 +127,14 @@ def main(args):
     else:
         logger, writer = create_logger(None)
 
-    # Create model:
-    # assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
-    # latent_size = args.image_size // 8
-    latent_size = args.image_size
-    model = DiT_models[args.model](
-        input_size=latent_size,
+    
+    model = U_DiT(
+        img_size=args.image_size,
         num_classes=args.num_classes,
         in_channels=args.in_channels,
-        dim=args.dim,
+        spatial_dims=args.dim,
         pos_embed_dim=args.pos_embed_dim,
+        learn_sigma=True
     ).to(device)
     
     # Note that parameter initialization is done within the DiT constructor
@@ -175,7 +169,7 @@ def main(args):
     # dataset = ImageFolder(args.data_path, transform=transform)
     if args.dim == 3: 
         # dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
-        dataset = BrainDataset_3D_Patch(args.data_path, args.age_path, mode="train")
+        dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
     else:
         dataset = BrainDataset_2D(args.data_path, args.age_path, mode="train")
     
@@ -295,7 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("--age-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--resume-checkpoint", type=str, default=None)
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
+    parser.add_argument("--model", type=str, default="DiT-XL/2")
     parser.add_argument("--image-size", type=int, choices=[32, 128, 224, 256, 512], default=256)
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--pos-embed-dim", type=int, default=3)
