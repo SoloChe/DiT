@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name='train_udit'
+#SBATCH --job-name='train_ldm'
 #SBATCH --nodes=1    
 #SBATCH --mem=64G                 
 #SBATCH --ntasks-per-node=1
@@ -21,16 +21,20 @@ source activate torch_base
 age_path="/data/amciilab/yiming/DATA/brain_age/masterdata.csv"
 data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 
-resume_checkpoint="./results/009-UDiT-B-16-3D/checkpoints/0080000.pt"
+# data
+prefix='IXI'
 
-MODEL_FLAGS="--model UDiT-B/8 --pos-embed-dim 4 --resume-checkpoint $resume_checkpoint"
+# resume_checkpoint="./results/009-UDiT-B-16-3D/checkpoints/0080000.pt"
+vae_checkpoint="./logs_vae/32x64x64x128/checkpoints/checkpoint_160000.pt"
 
-DATA_FLAGS="--data-path $data_path --age-path $age_path --num-classes 65 \
-            --image-size 224 --in-channels 1 --dim 3\
-            --global-batch-size 8 --epochs 8000 --num-workers 4"
+MODEL_FLAGS="--model DiT-L/2 --pos-embed-dim 4 --vae-checkpoint $vae_checkpoint"
+
+DATA_FLAGS="--data-path $data_path --age-path $age_path --prefix $prefix \
+            --image-size 28 --in-channels 3 --dim 3\
+            --global-batch-size 16 --epochs 8000 --num-workers 4"
 
 SAMPLE_FLAGS="--labels 60\
-              --ckpt-every 2000 --log-every 100"
+              --ckpt-every 2000 --log-every 200"
 
 
 
@@ -47,4 +51,4 @@ torchrun --nproc-per-node $NUM_GPUS\
         --nnodes=1\
         --rdzv-backend=c10d\
         --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT\
-        ./scripts/train_dunetr.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAGS
+        ./scripts/train_ldm.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAGS

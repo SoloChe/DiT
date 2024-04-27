@@ -206,7 +206,9 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
+        # print(f'x: {x.shape}')
         x = self.avgpool(x)
+        # print(f'x: {x.shape}')
 
         x = x.view(x.size(0), -1)
         x = self.fc(x)
@@ -233,3 +235,9 @@ def generate_model(model_depth, **kwargs):
         model = ResNet(Bottleneck, [3, 24, 36, 3], get_inplanes(), **kwargs)
 
     return model
+
+if __name__ == '__main__':
+    model = generate_model(18, n_input_channels=1, n_classes=2)
+    x = torch.randn(1, 1, 224, 224, 224)
+    y = model(x)
+    

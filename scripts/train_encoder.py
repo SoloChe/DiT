@@ -28,7 +28,7 @@ from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from generative.networks.schedulers import DDPMScheduler
 
-from data_med import BrainDataset_3D
+from data_med import BrainDataset_3D, normalise_percentile
 from utils import create_logger
 
 import argparse
@@ -87,9 +87,10 @@ def main(args):
         logger.info(f'Experiment directory created at {args.log_path}')
         logger.info(args)
 
+        prefix = None if args.prefix == 'all' else args.prefix
         # Set up dataset:
-        train_dataset = BrainDataset_3D(args.data_path, args.age_path, mode="train")
-        val_dataset = BrainDataset_3D(args.data_path, args.age_path, mode="val")
+        train_dataset = BrainDataset_3D(args.data_path, args.age_path, prefix=prefix, mode="train", crop=True, transform=normalise_percentile)
+        val_dataset = BrainDataset_3D(args.data_path, args.age_path, prefix=prefix, mode="val", crop=True, transform=normalise_percentile)
         train_loader = DataLoader(
             train_dataset,
             batch_size=args.batch_size,
@@ -140,9 +141,20 @@ def main(args):
         
         logger.info(f"Autoencoder Model with {sum(p.numel() for p in autoencoder.parameters()) / 1024 / 1024:.2f}M parameters.")
         logger.info(f"Discriminator Model with {sum(p.numel() for p in discriminator.parameters()) / 1024 / 1024:.2f}M parameters.")
+        
+        if args.resume_checkpoint is not None:
+            logger.info(f"Resuming from checkpoint: {args.resume_checkpoint}")
+            checkpoint = torch.load(args.resume_checkpoint)
+            autoencoder.load_state_dict(checkpoint['autoencoder'])
+            discriminator.load_state_dict(checkpoint['discriminator'])
+            optimizer_g.load_state_dict(checkpoint['optimizer_g'])
+            optimizer_d.load_state_dict(checkpoint['optimizer_d'])
+            train_steps = checkpoint['train_steps']
+        else:
+            train_steps = 0
+       
        
         # Training loop
-        train_steps = 0
         for epoch in range(args.epochs):
             autoencoder.train()
             discriminator.train()
@@ -158,7 +170,7 @@ def main(args):
                 optimizer_g.zero_grad(set_to_none=True)
                 reconstruction, z_mu, z_sigma = autoencoder(images)
                 
-                print(reconstruction.shape, z_mu.shape, z_sigma.shape)
+                # print(reconstruction.shape, z_mu.shape, z_sigma.shape)
                 
                 kl_loss = KL_loss(z_mu, z_sigma)
 
@@ -196,6 +208,8 @@ def main(args):
                     if train_steps % args.log_steps == 0:
                         logger.info(f"recons_loss: {loss / (step + 1):.4f}, gen_loss: {gen_loss / (step + 1):.4f}, disc_loss: {disc_loss / (step + 1):.4f}")
                         writer.add_scalar("train/recons_loss", loss / (step + 1), train_steps)
+                        writer.add_scalar("train/gen_loss", gen_loss / (step + 1), train_steps)
+                        writer.add_scalar("train/disc_loss", disc_loss / (step + 1), train_steps)
                         
                     if train_steps % args.save_steps == 0:
                         checkpoints = {'autoencoder': autoencoder.state_dict(), 
@@ -207,18 +221,31 @@ def main(args):
                         
                         torch.save(checkpoints, os.path.join(checkpoints_path, f"checkpoint_{train_steps}.pt"))
                         
-                        img_plot = images.detach().cpu() # [B, C, H, W, D]
-                        img_plot = img_plot[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
-                        img_plot = torch.einsum('chwd->dchw', img_plot) # [20, 1, H, W]
-                        
-                        recon_imgs = reconstruction.detach().cpu() # [B, C, H, W, D]
-                        recon_imgs = recon_imgs[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
-                        recon_imgs = torch.einsum('chwd->dchw', recon_imgs) # [20, 1, H, W]
-                        
-                        plots = torch.cat([img_plot, recon_imgs], dim=0)
-                        
-                        plots = make_grid(plots, nrow=5)
-                        save_image(plots, os.path.join(image_path, f"recon_{train_steps}.png"))
+                        # visual check
+                        autoencoder.eval()
+                        for n_val, data_val in enumerate(val_loader):
+                            images_val = data_val[0].to(device)
+                            with torch.no_grad():
+                                reconstruction_val, _, _ = autoencoder(images_val)
+                                recons_loss_val = l1_loss(reconstruction_val.float(), images_val.float())
+                                logger.info(f"Validation recons_loss: {recons_loss_val.item()}")
+                                
+                            img_plot = images_val.detach().cpu() # [B, C, H, W, D]
+                            img_plot = img_plot[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
+                            img_plot = torch.einsum('chwd->dchw', img_plot) # [20, 1, H, W]
+                            
+                            recon_imgs = reconstruction_val.detach().cpu() # [B, C, H, W, D]
+                            recon_imgs = recon_imgs[0, :, :, :, 112-10:112+10] # [1, H, W, 20] # visual check 20 slices (top view)
+                            recon_imgs = torch.einsum('chwd->dchw', recon_imgs) # [20, 1, H, W]
+                            
+                            plots = torch.cat([img_plot, recon_imgs], dim=0)
+                            
+                            plots = make_grid(plots, nrow=5)
+                            save_image(plots, os.path.join(image_path, f"recon_{train_steps}_{n_val}.png"))
+                            
+                            if n_val > 1: # select 2 batches
+                                break
+                        autoencoder.train()
                         
                         
                         
@@ -233,12 +260,14 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/extracted/")
     parser.add_argument("--age_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--prefix", type=str, default='all')
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--global_seed", type=int, default=42)
     parser.add_argument("--autoencoder_warm_up_n_epochs", type=int, default=5)
     parser.add_argument("--log_steps", type=int, default=10)
     parser.add_argument("--save_steps", type=int, default=2000)
+    parser.add_argument("--resume_checkpoint", type=str, default=None)
     
     
     args = parser.parse_args()

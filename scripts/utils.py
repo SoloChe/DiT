@@ -26,22 +26,43 @@ def sync_params(params):
             dist.broadcast(p, 0)
 
 
-def load_from_checkpoint(model, ema, opt, checkpoint, device):
+def load_from_checkpoint(model, ema=None, opt=None, checkpoint=None, load_sf=False):
     """
     load states from a checkpoint
     """
     assert os.path.isfile(checkpoint), f"Could not find DiT checkpoint at {checkpoint}"
     checkpoint = torch.load(checkpoint, map_location=torch.device("cuda"))
-
     model.load_state_dict(checkpoint["model"])
-    ema.load_state_dict(checkpoint["ema"])
-    opt.load_state_dict(checkpoint["opt"])
-
-    # sync_params(model.parameters())
-    # sync_params(ema.parameters())
-
     steps = checkpoint["resume_steps"]
-    return model, ema, opt, steps
+    
+    if ema:
+        ema.load_state_dict(checkpoint["ema"])
+    if opt:
+        opt.load_state_dict(checkpoint["opt"])
+        
+    if load_sf:
+        scale_factor = checkpoint["scale_factor"]
+        return model, ema, opt, steps, scale_factor
+    else:
+        return model, ema, opt, steps
+
+def load_from_checkpoint_vae(model, checkpoint):
+    """
+    load states from a checkpoint for vae
+    """
+    assert os.path.isfile(checkpoint), f"Could not find VAE checkpoint at {checkpoint}"
+    checkpoint = torch.load(checkpoint, map_location=torch.device("cuda"))
+    model.load_state_dict(checkpoint['autoencoder'])
+    return model
+
+def load_from_checkpoint_resnet(model, checkpoint):
+    """
+    load states from a checkpoint for resnet
+    """
+    assert os.path.isfile(checkpoint), f"Could not find ResNet checkpoint at {checkpoint}"
+    checkpoint = torch.load(checkpoint, map_location=torch.device("cuda"))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
 
 
 class DummyWriter:
