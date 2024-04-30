@@ -89,8 +89,18 @@ def main(args):
 
         prefix = None if args.prefix == 'all' else args.prefix
         # Set up dataset:
-        train_dataset = BrainDataset_3D(args.data_path, args.age_path, prefix=prefix, mode="train", crop=True, transform=normalise_percentile)
-        val_dataset = BrainDataset_3D(args.data_path, args.age_path, prefix=prefix, mode="val", crop=True, transform=normalise_percentile)
+        train_dataset = BrainDataset_3D(args.data_path, args.age_path, 
+                                        prefix=prefix, 
+                                        mode="train", 
+                                        crop=True, 
+                                        transform=normalise_percentile,
+                                        oversample=args.oversample)
+        val_dataset = BrainDataset_3D(args.data_path, args.age_path, 
+                                      prefix=prefix, 
+                                      mode="val", 
+                                      crop=True, 
+                                      transform=normalise_percentile,
+                                      oversample=False)
         train_loader = DataLoader(
             train_dataset,
             batch_size=args.batch_size,
@@ -102,7 +112,7 @@ def main(args):
         val_loader = DataLoader(
             val_dataset,
             batch_size=args.batch_size,
-            shuffle=False,
+            shuffle=True,
             drop_last=False,
             pin_memory=True,    
             num_workers=args.num_workers,
@@ -259,6 +269,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_path", type=str, default="./logs_vae")
     parser.add_argument("--data_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/extracted/")
     parser.add_argument("--age_path", type=str, default="/data/amciilab/yiming/DATA/brain_age/masterdata.csv")
+    parser.add_argument("--oversample", type=bool, default=False)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--prefix", type=str, default='all')
     parser.add_argument("--num_workers", type=int, default=4)
