@@ -24,7 +24,9 @@ data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 # resume_checkpoint="./results/009-UDiT-B-16-3D/checkpoints/0080000.pt"
 
 prefix="IXI"
-MODEL_FLAGS="--model UDiT-B/16 --pos-embed-dim 4"
+model="DiT-XL/16"
+
+MODEL_FLAGS="--model $model --pos-embed-dim 4"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --prefix $prefix\
             --image-size 224 --in-channels 1 --dim 2 --oversample True\
@@ -48,4 +50,4 @@ torchrun --nproc-per-node $NUM_GPUS\
         --nnodes=1\
         --rdzv-backend=c10d\
         --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT\
-        ./scripts/train_dunetr.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAGS
+        ./scripts/train_udit.py $DATA_FLAGS $MODEL_FLAGS $SAMPLE_FLAGS

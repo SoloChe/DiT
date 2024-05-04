@@ -106,7 +106,7 @@ def main(args):
         suffix = "-3D" if args.dim == 3 else "-2D"
         experiment_index = len(glob(f"{args.results_dir}/*")) 
         model_string_name = (
-            args.model.replace("/", "-") + suffix + f"-{args.prefix}"
+            'U' + args.model.replace("/", "-") + suffix + f"-{args.prefix}"
         )  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
         experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
         checkpoint_dir = (
@@ -136,6 +136,7 @@ def main(args):
         spatial_dims=args.dim,
         pos_embed_dim=args.pos_embed_dim,
         learn_sigma=True,
+        dit=args.model,
     ).to(device)
 
     # Note that parameter initialization is done within the DiT constructor
@@ -299,21 +300,22 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # Default args here will train DiT-XL/2 with the hyperparameters we used in our paper (except training iters).
+   
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, required=True)
     parser.add_argument("--age-path", type=str, required=True)
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--resume-checkpoint", type=str, default=None)
-    parser.add_argument("--model", type=str, default="DiT-XL/2")
+    parser.add_argument("--model", type=str, default="DiT-XL/16")
     parser.add_argument(
         "--image-size", type=int, choices=[32, 128, 224, 256, 512], default=256
     )
+    
     parser.add_argument("--in-channels", type=int, default=3)
     parser.add_argument("--pos-embed-dim", type=int, default=4)
     parser.add_argument("--prefix", type=str, default="all")
     parser.add_argument("--oversample", type=bool, default=False)
-    parser.add_argument("--dim", type=int, default=3)
+    parser.add_argument("--dim", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--global-batch-size", type=int, default=256)
     parser.add_argument("--global-seed", type=int, default=0)

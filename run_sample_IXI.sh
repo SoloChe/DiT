@@ -21,21 +21,32 @@ source activate torch_base
 data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 age_path="/data/amciilab/yiming/DATA/brain_age/masterdata.csv"
 
+
+
+
+model_id="003"
+model="UDiT"
+model_size="B"
+model_patch="16"
 dim=2
-pos_embed_dim=2
-steps=0300000
+prefix="IXI"
+steps="0500000"
+pos_embed_dim=4
 save=True
+
 for num_noise_steps in 50
 do
         for cfg_scale in 2.0
         do
-                log_path="./logs_new/002-DiT-XL-16-${dim}D-${cfg_scale}-${num_noise_steps}-${steps}"
+                model_name=$(echo $model | tr '/' '-')
+                log_path="./logs_new/${model_id}-${model_name}-${model_size}-${model_patch}-${dim}D-${prefix}-${cfg_scale}-${num_noise_steps}-${steps}"
+                echo $log_path
 
-                MODEL_FLAGS="--model DiT-XL/16 --pos-embed-dim $pos_embed_dim\
-                                --ckpt ./results/001-DiT-XL-16-2D/checkpoints/${steps}.pt"
+                MODEL_FLAGS="--model $model --pos-embed-dim $pos_embed_dim\
+                                --DiT-checkpoint ./results/${model_id}-${model_name}-${model_size}-${model_patch}-${dim}D-${prefix}/checkpoints/${steps}.pt"
 
                 DATA_FLAGS="--data-path $data_path --age-path $age_path --num-batches 20 --batch-size 224\
-                        --num-classes 65 --image-size 224 --in-channels 1 --dim $dim"
+                                --image-size 224 --in-channels 1 --dim $dim"
 
                 SAMPLE_FLAG="--num-noise-steps $num_noise_steps --cfg-scale $cfg_scale --from-noise False\
                                 --log-path $log_path --save $save"

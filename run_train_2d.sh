@@ -21,10 +21,10 @@ source activate torch_base
 age_path="/data/amciilab/yiming/DATA/brain_age/masterdata.csv"
 data_path="/data/amciilab/yiming/DATA/brain_age/extracted"
 
-# resume_checkpoint="./results/001-DiT-XL-16-3D/checkpoints/0004700.pt"
-
 prefix="IXI"
-MODEL_FLAGS="--model DiT-XL/16 --pos-embed-dim 4"
+# resume_checkpoint="./results/002-DiT-XL-16-2D-${prefix}/checkpoints/0174000.pt"
+
+MODEL_FLAGS="--model DiT-XL/8 --pos-embed-dim 4" #--resume-checkpoint $resume_checkpoint"
 
 DATA_FLAGS="--data-path $data_path --age-path $age_path --prefix $prefix\
             --image-size 224 --in-channels 1 --dim 2 --oversample True\

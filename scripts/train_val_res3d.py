@@ -115,7 +115,7 @@ def main(args):
             model, opt, args.resume_checkpoint
         )
         resume_epoch += 1
-        logger.info(f"Resuming training from epoch {resume_epoch}, train_steps {train_steps}.")
+        logger.info(f"Resuming training from epoch {resume_epoch}, train_steps {resume_train_steps}.")
     else:
         resume_epoch = 0
         resume_train_steps = 0
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--val_freq", type=int, default=10)
-    parser.add_argument("--save_freq", type=int, default=10)
+    parser.add_argument("--save_freq", type=int, default=1)
     args = parser.parse_args()
 
     main(args)

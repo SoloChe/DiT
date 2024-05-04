@@ -304,7 +304,8 @@ class DiT(nn.Module):
         self.dim = dim
         self.pos_embed_dim = pos_embed_dim
         self.return_hidden_states = return_hidden_states
-
+        self.hidden_size = hidden_size
+        
         if self.dim == 3:
             self.x_embedder = PatchEmbed3D(
                 input_size, patch_size, in_channels, hidden_size, bias=True

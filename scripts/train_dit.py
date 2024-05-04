@@ -43,6 +43,7 @@ from data_med import BrainDataset_3D, BrainDataset_2D, get_age
 from translation import sample_from_noise
 from utils import load_from_checkpoint
 
+from pathlib import Path
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -102,7 +103,6 @@ def main(args):
 
     # Setup an experiment folder:
     if rank == 0:
-
         os.makedirs(
             args.results_dir, exist_ok=True
         )  # Make results folder (holds all experiment subfolders)
@@ -112,7 +112,10 @@ def main(args):
         model_string_name = (
             args.model.replace("/", "-") + suffix + f"-{args.prefix}"
         )  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
-        experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
+        if args.resume_checkpoint:
+            experiment_dir = Path(args.resume_checkpoint).parent.parent
+        else:
+            experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
         checkpoint_dir = (
             f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
         )
@@ -134,9 +137,8 @@ def main(args):
     logger.info(f"Number of classes: {args.num_classes}")
 
     # Create model:
-    latent_size = args.image_size
     model = DiT_models[args.model](
-        input_size=latent_size,
+        input_size=args.image_size,
         num_classes=args.num_classes,
         in_channels=args.in_channels,
         dim=args.dim,
